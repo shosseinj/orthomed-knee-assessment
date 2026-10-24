@@ -1,0 +1,100 @@
+name: knee-website
+
+x-service-defaults: &service-defaults
+  restart: unless-stopped
+  init: true
+  logging:
+    driver: json-file
+    options:
+      max-size: 20m
+      max-file: "5"
+
+services:
+  backend:
+    <<: *service-defaults
+    image: knee-website-backend:local
+    build:
+      context: ./backend
+    command:
+      - /bin/sh
+      - -c
+      - >-
+        python manage.py migrate --noinput &&
+        python manage.py collectstatic --noinput &&
+        exec gunicorn config.wsgi:application
+        --bind 0.0.0.0:8000
+        --worker-class gthread
+        --workers 1
+        --threads 4
+        --timeout 180
+        --access-logfile -
+        --error-logfile -
+    env_file:
+      - .env
+    environment:
+      SQLITE_DB_PATH: /data/db/db.sqlite3
+      DJANGO_MEDIA_ROOT: /data/media
+      DJANGO_STATIC_ROOT: /data/static
+      # The edge proxy replaces X-Real-IP; the backend has no public host port.
+      ACCESS_AUDIT_TRUST_PROXY_IP: "true"
+      GEOIP_CITY_DB_PATH: /app/geoip/GeoLite2-City.mmdb
+      # Explicit test lane requested for deployed acceptance testing. Only
+      # numbers with this reserved prefix bypass SMS.ir.
+      ENABLE_MOCK_OTP: "true"
+      MOCK_OTP_PREFIX: "0950"
+      MOCK_OTP_CODE: "12345"
+    expose:
+      - "8000"
+    volumes:
+      - knee_db:/data/db
+      - knee_media:/data/media
+      - knee_static:/data/static
+      - ./backend/geoip:/app/geoip:ro
+      - ./backend/logs:/app/logs
+    networks:
+      edge:
+        aliases:
+          - knee-backend
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; r=urllib.request.Request('http://127.0.0.1:8000/api/v1/health/', headers={'X-Forwarded-Proto':'https'}); urllib.request.urlopen(r, timeout=3)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    stop_grace_period: 30s
+
+  frontend:
+    <<: *service-defaults
+    image: knee-website-frontend:local
+    build:
+      context: ./frontend
+      args:
+        VITE_API_URL: /api/v1
+    expose:
+      - "80"
+    networks:
+      edge:
+        aliases:
+          - knee-frontend
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://127.0.0.1/healthz"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 10s
+
+volumes:
+  knee_db:
+    name: knee-website-db
+  knee_media:
+    name: knee-website-media
+  knee_static:
+    name: knee-website-static
+
+networks:
+  edge:
+    name: sharif-clinic-82-115-20-247-net
+    external: true

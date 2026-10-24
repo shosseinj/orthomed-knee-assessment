@@ -1,0 +1,35 @@
+html[dir="ltr"] { direction: ltr; }
+.language-switcher { display: inline-flex; flex: 0 0 auto; align-items: center; gap: 4px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--mist); direction: ltr; }
+.language-switcher > svg { margin-inline: 5px; color: var(--forest); }
+.language-switcher button { border: 0; border-radius: 8px; padding: 5px 9px; color: var(--forest); background: transparent; font-size: 12px; }
+.language-switcher button[aria-pressed="true"] { background: var(--forest); color: white; }
+.language-switcher button:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
+.auth-panel { position: relative; }
+.auth-panel > .language-switcher { position: absolute; inset-block-start: 20px; inset-inline-end: 20px; }
+.logo-wordmark { display: inline-flex; align-items: center; justify-content: center; gap: 9px; color: var(--forest); font-size: 27px; font-weight: 800; letter-spacing: -1px; }
+.logo-wordmark img { width: 40px; height: 40px; }
+[dir="ltr"] .case-row, [dir="ltr"] .birth-date-trigger { text-align: left; }
+[dir="ltr"] .case-row__main small, [dir="ltr"] .toast { direction: ltr; }
+[dir="ltr"] .sidebar { border-left: 0; border-right: 1px solid var(--line); }
+[dir="ltr"] .user-chip { padding-right: 0; padding-left: 14px; border-right: 0; border-left: 1px solid var(--line); }
+[dir="ltr"] .stat-card__meta, [dir="ltr"] .birth-date-trigger > svg:last-child { margin-right: 0; margin-left: auto; }
+[dir="ltr"] .auth-back { margin-right: 0; margin-left: auto; }
+[dir="ltr"] .input-wrap svg, [dir="ltr"] .search svg { right: auto; left: 14px; }
+[dir="ltr"] .input-wrap input, [dir="ltr"] .search input { padding-right: 14px; padding-left: 45px; }
+[dir="ltr"] .patient-note { border-right: 0; border-left: 3px solid var(--primary-500); }
+[dir="ltr"] :is(.back-link, .wizard-actions, .submit-panel, .case-row__actions, .birth-date-trigger) :is(.lucide-arrow-left, .lucide-arrow-right, .lucide-chevron-left, .lucide-chevron-right),
+[dir="ltr"] .auth-card .lucide-arrow-left { transform: scaleX(-1); }
+@media (max-width: 950px) {
+  [dir="ltr"] .sidebar { right: auto; left: 0; transform: translateX(-105%); }
+  [dir="ltr"] .sidebar--open { transform: translateX(0); }
+  [dir="ltr"] .sidebar__close { left: auto; right: 14px; }
+  [dir="ltr"] .topbar__title { margin-left: 12px; margin-right: auto; }
+  .auth-panel { padding-top: 86px; }
+}
+@media (max-width: 650px) {
+  .topbar .language-switcher { gap: 0; padding: 3px; }
+  .topbar .language-switcher > svg { display: none; }
+  .topbar .language-switcher button { font-size: 11px; padding: 5px 6px; }
+  .topbar__actions .user-chip { display: none; }
+  [dir="ltr"] .page-heading p { max-width: none; }
+}

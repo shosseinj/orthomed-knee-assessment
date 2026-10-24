@@ -1,0 +1,15 @@
+.env
+.venv/
+__pycache__/
+*.py[cod]
+*.sqlite3
+backend/media/
+backend/geoip/*.mmdb
+backend/logs/*.jsonl
+frontend/node_modules/
+frontend/dist/
+*.tsbuildinfo
+.DS_Store
+backend/staticfiles/
+playwright-report/
+test-results/
