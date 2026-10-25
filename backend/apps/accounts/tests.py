@@ -11,18 +11,24 @@ from rest_framework.test import APIClient
 
 from .access_audit import AccessEventKind, record_access
 from .models import OTPChallenge, User
-from .serializers import OTPVerifySerializer
+from .serializers import OTPVerifySerializer, RegistrationSerializer
 from .services import issue_otp
 from .validators import normalize_national_code
 
 
 @override_settings(DEBUG=True, OTP_BACKEND="console", ENABLE_MOCK_OTP=True, MOCK_OTP_PREFIX="0950", MOCK_OTP_CODE="11111")
 class OTPFlowTests(TestCase):
+    def registration_token(self, phone):
+        verification = OTPVerifySerializer(data={"phone_number": phone, "code": "11111"})
+        self.assertTrue(verification.is_valid(), verification.errors)
+        result = verification.save()
+        self.assertTrue(result["registration_required"])
+        return result["registration_token"]
+
     def test_development_otp_creates_patient_and_tokens(self):
         issue_otp("09501234567")
-        serializer = OTPVerifySerializer(data={
-            "phone_number": "09501234567",
-            "code": "11111",
+        serializer = RegistrationSerializer(data={
+            "registration_token": self.registration_token("09501234567"),
             "first_name": "سارا",
             "last_name": "محمدی",
             "national_code": "۰۰۱۳۵۲۰۸۲۲",
@@ -38,8 +44,8 @@ class OTPFlowTests(TestCase):
 
     def test_insurance_registration_requires_admin_approval(self):
         issue_otp("09501234568")
-        serializer = OTPVerifySerializer(data={
-            "phone_number": "09501234568", "code": "11111", "role": "insurance",
+        serializer = RegistrationSerializer(data={
+            "registration_token": self.registration_token("09501234568"), "role": "insurance",
             "first_name": "مینا", "last_name": "احمدی", "organization_name": "بیمه نمونه",
             "national_code": "0084575948", "birth_date": "1985-06-12",
         })
@@ -70,43 +76,43 @@ class OTPFlowTests(TestCase):
         get_gateway.return_value.send_otp.assert_called_once_with("09508888888", "54321")
         self.assertFalse(verify_otp("09508888888", "11111"))
         self.assertTrue(verify_otp("09508888888", "54321"))
-        response = APIClient().post("/api/v1/auth/phone/check/", {"phone_number": "09508888888"}, format="json")
+        response = APIClient().post("/api/v1/auth/otp/request/", {"phone_number": "09508888888"}, format="json")
         self.assertFalse(response.data["is_mock"])
         self.assertNotIn("development_code", response.data)
 
-    def test_phone_check_routes_existing_and_new_users(self):
+    def test_request_code_does_not_disclose_existing_or_new_users(self):
         User.objects.create_user("09501111111", role=User.Role.PATIENT)
         client = APIClient()
-        existing = client.post("/api/v1/auth/phone/check/", {"phone_number": "09501111111"}, format="json")
-        new = client.post("/api/v1/auth/phone/check/", {"phone_number": "09502222222"}, format="json")
-        self.assertTrue(existing.data["is_registered"])
-        self.assertFalse(new.data["is_registered"])
+        existing = client.post("/api/v1/auth/otp/request/", {"phone_number": "09501111111"}, format="json")
+        new = client.post("/api/v1/auth/otp/request/", {"phone_number": "09502222222"}, format="json")
+        self.assertNotIn("is_registered", existing.data)
+        self.assertEqual(existing.data, new.data)
         self.assertTrue(new.data["is_mock"])
 
     def test_registration_requires_valid_unique_national_code_and_birth_date(self):
         issue_otp("09503333333")
         payload = {
-            "phone_number": "09503333333", "code": "11111",
+            "registration_token": self.registration_token("09503333333"),
             "first_name": "علی", "last_name": "رضایی",
         }
-        missing = OTPVerifySerializer(data=payload)
+        missing = RegistrationSerializer(data=payload)
         self.assertFalse(missing.is_valid())
         self.assertIn("national_code", missing.errors)
 
-        invalid = OTPVerifySerializer(data={**payload, "national_code": "1111111111", "birth_date": "1990-01-01"})
+        invalid = RegistrationSerializer(data={**payload, "national_code": "1111111111", "birth_date": "1990-01-01"})
         self.assertFalse(invalid.is_valid())
         self.assertIn("national_code", invalid.errors)
-        self.assertTrue(OTPChallenge.objects.latest("created_at").is_usable)
+        self.assertIsNotNone(OTPChallenge.objects.latest("created_at").consumed_at)
 
-        future = OTPVerifySerializer(data={**payload, "national_code": "0013520822", "birth_date": str(timezone.localdate() + timedelta(days=1))})
+        future = RegistrationSerializer(data={**payload, "national_code": "0013520822", "birth_date": str(timezone.localdate() + timedelta(days=1))})
         self.assertFalse(future.is_valid())
         self.assertIn("birth_date", future.errors)
 
         User.objects.create_user("09120000000", national_code="0013520822")
-        duplicate = OTPVerifySerializer(data={**payload, "national_code": "0013520822", "birth_date": "1990-01-01"})
+        duplicate = RegistrationSerializer(data={**payload, "national_code": "0013520822", "birth_date": "1990-01-01"})
         self.assertFalse(duplicate.is_valid())
         self.assertIn("national_code", duplicate.errors)
-        self.assertTrue(OTPChallenge.objects.latest("created_at").is_usable)
+        self.assertIsNotNone(OTPChallenge.objects.latest("created_at").consumed_at)
 
     def test_patient_can_edit_profile_but_not_phone_or_national_code(self):
         patient = User.objects.create_user(

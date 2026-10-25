@@ -53,6 +53,34 @@ The frontend binds to **`0.0.0.0:5173`** and the backend to **`0.0.0.0:8000`**. 
 
 The frontend proxies `/api` and `/media` to the backend, so browsers on other devices do not need a separate API address. These commands run the development environment; use the production templates for an HTTPS deployment.
 
+### Launch with one command
+
+```bash
+./run.sh
+```
+
+The runner works from any directory, creates `.env` from `.env.example` when missing, installs dependencies on first launch or when the dependency files change, applies database migrations, and starts both servers on `0.0.0.0:5173` and `0.0.0.0:8000`. If your Node.js version is too old, it downloads and uses Node.js 22 through `npx`. Python 3.12 or newer and npm are required. Press **Ctrl+C** to stop both servers. Restart the runner after changing `.env` or backend code. When either port is occupied, the runner uses `lsof` to find and stop its listener, waits up to five seconds, and force-stops it if necessary before restarting the project. Processes owned by another user still require that user's permission to stop.
+
+### SMS.ir sign-in codes
+
+Set these values in the root `.env` before requesting a sign-in or registration code:
+
+```dotenv
+OTP_BACKEND=smsir
+ENABLE_MOCK_OTP=false
+SMSIR_API_KEY=your-api-key
+SMSIR_TEMPLATE_ID=your-numeric-template-id
+SMSIR_CODE_PARAMETER=CODE
+```
+
+Use the ID of your approved SMS.ir verification template. `SMSIR_CODE_PARAMETER` must match the template's OTP placeholder name without `#` characters: for `#PARAMETER1#`, set it to `PARAMETER1`. Use a verification template with one code placeholder; the website generates a random five-digit code for that parameter. The backend sends the request to SMS.ir's [`POST /v1/send/verify` endpoint](https://api.sms.ir/swagger/index.html), with the API key in the `x-api-key` header. The key stays on the backend.
+
+Enter a mobile number to receive a code immediately; no terms checkbox is required. The backend verifies the code before looking up the account. Existing users sign in immediately. New users then complete registration without requesting a second code. Their verified phone is carried in a signed registration token that expires after 15 minutes and only permits creating that phone's account; it cannot be reused to sign in. Account status is not disclosed before verification.
+
+Codes expire after two minutes and can be used once. If configuration is missing or SMS.ir rejects the request, the website shows a delivery error and the failed challenge is removed. The environment example enables SMS.ir delivery, so enter your credentials before using sign-in. To develop without sending SMS, explicitly set `OTP_BACKEND=console` and `ENABLE_MOCK_OTP=true` with `DJANGO_DEBUG=true`.
+
+If SMS.ir delivery returns HTTP 503, check the backend log for the upstream HTTP status, numeric provider status, or network error type. The API key, recipient, and verification code are omitted from these diagnostics. The template ID must belong to the account associated with your API key, be approved for use, and contain the configured code parameter. You can check credit and templates without sending SMS using SMS.ir's `GET /v1/credit` and `GET /v1/templates` APIs.
+
 Create an administrator account when needed:
 
 ```bash
@@ -66,6 +94,8 @@ Superusers created with `createsuperuser` can access this page. To grant only ac
 
 ```bash
 python backend/manage.py grant_account_manager <registered-mobile-number>
+
+.venv/bin/python backend/manage.py grant_account_manager 09XXXXXXXXX
 ```
 
 This grants the dedicated `accounts.manage_account_verifications` permission, without superuser access or permission to edit account roles. Administrator access cannot be selected at public registration or granted from the account-approval page. Django Admin remains available at [http://localhost:8000/admin/](http://localhost:8000/admin/).
@@ -96,7 +126,8 @@ Copy `.env.example` to `.env`; keep real credentials out of Git.
 | `API_PROXY_TARGET` | Optional development proxy target; defaults to `http://127.0.0.1:8000` |
 | `OTP_BACKEND` | `console` for local development or `smsir` for SMS delivery |
 | `ENABLE_MOCK_OTP` | Enables the development test-number flow |
-| `SMSIR_API_KEY`, `SMSIR_TEMPLATE_ID` | SMS.ir credentials and template |
+| `SMSIR_API_KEY`, `SMSIR_TEMPLATE_ID` | SMS.ir API key and numeric verification template ID |
+| `SMSIR_CODE_PARAMETER` | Template's OTP placeholder name, without `#`; defaults to `CODE` |
 | `OPENAI_API_KEY`, `OPENAI_API_URL`, `OPENAI_MODEL` | AI analysis provider configuration |
 | `AI_SETTINGS_ENCRYPTION_SECRET` | Optional stable secret for personal API key encryption; defaults to `DJANGO_SECRET_KEY` |
 | `ACCESS_AUDIT_PHONE_NUMBER` | Opt-in access auditing for one account |

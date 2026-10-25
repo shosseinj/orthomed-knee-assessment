@@ -1,7 +1,9 @@
 import re
 
 from django.conf import settings
+from django.core import signing
 from django.core.exceptions import ValidationError as DjangoValidationError
+from django.db import IntegrityError, transaction
 from rest_framework import serializers
 from rest_framework_simplejwt.tokens import RefreshToken
 
@@ -111,20 +113,50 @@ class AccountListQuerySerializer(serializers.Serializer):
 class OTPVerifySerializer(serializers.Serializer):
     phone_number = serializers.CharField()
     code = serializers.RegexField(r"^\d{5}$")
-    first_name = serializers.CharField(max_length=80, required=False, allow_blank=True)
-    last_name = serializers.CharField(max_length=100, required=False, allow_blank=True)
-    national_code = serializers.CharField(required=False, allow_blank=True)
-    birth_date = serializers.DateField(required=False)
-    role = serializers.ChoiceField(choices=(User.Role.PATIENT, User.Role.DOCTOR, User.Role.INSURANCE), required=False)
-    medical_council_number = serializers.CharField(max_length=32, required=False, allow_blank=True)
-    organization_name = serializers.CharField(max_length=160, required=False, allow_blank=True)
 
     def validate_phone_number(self, value):
         return normalize_phone(value)
 
+    def validate(self, attrs):
+        if not verify_otp(attrs["phone_number"], attrs["code"]):
+            raise serializers.ValidationError({"code": "کد واردشده نامعتبر یا منقضی است."})
+        return attrs
+
+    def save(self):
+        phone = self.validated_data["phone_number"]
+        user = User.objects.filter(phone_number=phone).first()
+        if user is None:
+            return {
+                "registration_required": True,
+                "registration_token": signing.dumps({"phone_number": phone}, salt="accounts.phone-registration"),
+            }
+        return {"registration_required": False, **login_result(user)}
+
+
+def login_result(user):
+    refresh = RefreshToken.for_user(user)
+    return {"access": str(refresh.access_token), "refresh": str(refresh), "user": AccountSelfSerializer(user).data}
+
+
+class RegistrationSerializer(serializers.Serializer):
+    registration_token = serializers.CharField(write_only=True)
+    first_name = serializers.CharField(max_length=80)
+    last_name = serializers.CharField(max_length=100)
+    national_code = serializers.CharField()
+    birth_date = serializers.DateField()
+    role = serializers.ChoiceField(choices=(User.Role.PATIENT, User.Role.DOCTOR, User.Role.INSURANCE), default=User.Role.PATIENT)
+    medical_council_number = serializers.CharField(max_length=32, required=False, allow_blank=True)
+    organization_name = serializers.CharField(max_length=160, required=False, allow_blank=True)
+
+    def validate_registration_token(self, value):
+        try:
+            payload = signing.loads(value, salt="accounts.phone-registration", max_age=15 * 60)
+            self.phone_number = normalize_phone(payload["phone_number"])
+        except (signing.BadSignature, KeyError, TypeError):
+            raise serializers.ValidationError("اعتبار تأیید شماره موبایل پایان یافته است. دوباره کد بگیرید.")
+        return value
+
     def validate_national_code(self, value):
-        if not value.strip():
-            return ""
         try:
             return normalize_national_code(value)
         except DjangoValidationError as exc:
@@ -137,36 +169,22 @@ class OTPVerifySerializer(serializers.Serializer):
             raise serializers.ValidationError(exc.messages) from exc
 
     def validate(self, attrs):
-        if not User.objects.filter(phone_number=attrs["phone_number"]).exists():
-            role = attrs.get("role", User.Role.PATIENT)
-            if not attrs.get("first_name", "").strip() or not attrs.get("last_name", "").strip():
-                raise serializers.ValidationError("نام و نام خانوادگی برای ثبت‌نام الزامی است.")
-            if not attrs.get("national_code"):
-                raise serializers.ValidationError({"national_code": "کد ملی برای ثبت‌نام الزامی است."})
-            if "birth_date" not in attrs:
-                raise serializers.ValidationError({"birth_date": "تاریخ تولد برای ثبت‌نام الزامی است."})
-            if User.objects.filter(national_code=attrs["national_code"]).exists():
-                raise serializers.ValidationError({"national_code": "این کد ملی قبلاً ثبت شده است."})
-            if role == User.Role.DOCTOR and not attrs.get("medical_council_number", "").strip():
-                raise serializers.ValidationError({"medical_council_number": "شماره نظام پزشکی الزامی است."})
-            if role == User.Role.INSURANCE and not attrs.get("organization_name", "").strip():
-                raise serializers.ValidationError({"organization_name": "نام شرکت بیمه الزامی است."})
-        if not verify_otp(attrs["phone_number"], attrs["code"]):
-            raise serializers.ValidationError({"code": "کد واردشده نامعتبر یا منقضی است."})
+        attrs["phone_number"] = self.phone_number
+        if User.objects.filter(phone_number=self.phone_number).exists():
+            raise serializers.ValidationError({"registration_token": "این شماره قبلاً ثبت شده است. دوباره کد ورود بگیرید."})
+        if User.objects.filter(national_code=attrs["national_code"]).exists():
+            raise serializers.ValidationError({"national_code": "این کد ملی قبلاً ثبت شده است."})
+        if attrs["role"] == User.Role.DOCTOR and not attrs.get("medical_council_number", "").strip():
+            raise serializers.ValidationError({"medical_council_number": "شماره نظام پزشکی الزامی است."})
+        if attrs["role"] == User.Role.INSURANCE and not attrs.get("organization_name", "").strip():
+            raise serializers.ValidationError({"organization_name": "نام شرکت بیمه الزامی است."})
         return attrs
 
     def save(self):
-        phone = self.validated_data["phone_number"]
-        user, created = User.objects.get_or_create(phone_number=phone)
-        if created:
-            user.first_name = self.validated_data.get("first_name", "")
-            user.last_name = self.validated_data.get("last_name", "")
-            user.national_code = self.validated_data["national_code"]
-            user.birth_date = self.validated_data["birth_date"]
-            user.role = self.validated_data.get("role", User.Role.PATIENT)
-            user.medical_council_number = self.validated_data.get("medical_council_number", "")
-            user.organization_name = self.validated_data.get("organization_name", "")
-            user.is_verified = user.role == User.Role.PATIENT
-            user.save()
-        refresh = RefreshToken.for_user(user)
-        return {"access": str(refresh.access_token), "refresh": str(refresh), "user": AccountSelfSerializer(user).data}
+        fields = {key: value for key, value in self.validated_data.items() if key != "registration_token"}
+        try:
+            with transaction.atomic():
+                user = User.objects.create_user(**fields, is_verified=fields["role"] == User.Role.PATIENT)
+        except IntegrityError:
+            raise serializers.ValidationError("شماره موبایل یا کد ملی قبلاً ثبت شده است.") from None
+        return login_result(user)

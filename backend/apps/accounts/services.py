@@ -11,6 +11,10 @@ from .models import OTPChallenge
 logger = logging.getLogger(__name__)
 
 
+class SMSDeliveryError(Exception):
+    """A verification message could not be accepted by the SMS provider."""
+
+
 class SMSGateway:
     def send_otp(self, phone_number: str, code: str) -> None:
         raise NotImplementedError
@@ -26,18 +30,60 @@ class SMSIRGateway(SMSGateway):
 
     def send_otp(self, phone_number: str, code: str) -> None:
         if not settings.SMSIR_API_KEY or not settings.SMSIR_TEMPLATE_ID:
-            raise RuntimeError("SMS.ir API key and verification template ID are required.")
-        response = requests.post(
-            self.endpoint,
-            headers={"X-API-KEY": settings.SMSIR_API_KEY},
-            json={
-                "mobile": phone_number,
-                "templateId": int(settings.SMSIR_TEMPLATE_ID),
-                "parameters": [{"name": settings.SMSIR_CODE_PARAMETER, "value": code}],
-            },
-            timeout=10,
-        )
-        response.raise_for_status()
+            logger.error("SMS.ir requires SMSIR_API_KEY and SMSIR_TEMPLATE_ID.")
+            raise SMSDeliveryError("SMS.ir is not configured.")
+        try:
+            template_id = int(settings.SMSIR_TEMPLATE_ID)
+            if template_id <= 0 or not settings.SMSIR_CODE_PARAMETER.strip():
+                raise ValueError
+        except (TypeError, ValueError):
+            logger.error("SMS.ir requires a positive SMSIR_TEMPLATE_ID and SMSIR_CODE_PARAMETER.")
+            raise SMSDeliveryError("SMS.ir template configuration is invalid.") from None
+
+        try:
+            response = requests.post(
+                self.endpoint,
+                headers={
+                    "Content-Type": "application/json",
+                    "Accept": "text/plain",
+                    "x-api-key": settings.SMSIR_API_KEY,
+                },
+                json={
+                    "mobile": phone_number,
+                    "templateId": template_id,
+                    "parameters": [{"name": settings.SMSIR_CODE_PARAMETER, "value": code}],
+                },
+                timeout=10,
+            )
+            response.raise_for_status()
+            result = response.json()
+        except requests.HTTPError:
+            try:
+                body = response.json()
+            except ValueError:
+                body = None
+            provider_status = body.get("status") if isinstance(body, dict) else None
+            logger.error(
+                "SMS.ir rejected verification: HTTP %s, provider status %s. "
+                "Check the API key, verification template ID, code parameter, and account credit.",
+                response.status_code,
+                provider_status if type(provider_status) is int else "unknown",
+            )
+            raise SMSDeliveryError("SMS.ir rejected the verification message.") from None
+        except requests.RequestException as exc:
+            # Provider exceptions can include credentials, the code, or recipient.
+            logger.error("SMS.ir verification request failed (%s).", type(exc).__name__)
+            raise SMSDeliveryError("SMS.ir is temporarily unavailable.") from None
+        except ValueError:
+            logger.error("SMS.ir returned invalid JSON (HTTP %s).", response.status_code)
+            raise SMSDeliveryError("SMS.ir returned an invalid response.") from None
+        if not isinstance(result, dict) or result.get("status") != 1:
+            provider_status = result.get("status") if isinstance(result, dict) else None
+            logger.error(
+                "SMS.ir did not accept verification (provider status %s).",
+                provider_status if type(provider_status) is int else "unknown",
+            )
+            raise SMSDeliveryError("SMS.ir rejected the verification message.")
 
 
 def get_sms_gateway() -> SMSGateway:
@@ -66,7 +112,11 @@ def issue_otp(phone_number: str) -> OTPChallenge:
     if is_mock:
         logger.info("Development OTP issued for %s", phone_number)
     else:
-        get_sms_gateway().send_otp(phone_number, code)
+        try:
+            get_sms_gateway().send_otp(phone_number, code)
+        except SMSDeliveryError:
+            challenge.delete()
+            raise
     return challenge
 
 

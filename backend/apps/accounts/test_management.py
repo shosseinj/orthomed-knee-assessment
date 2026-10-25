@@ -131,9 +131,10 @@ class AccountManagementTests(TestCase):
         with override_settings(DEBUG=True, ENABLE_MOCK_OTP=True, OTP_BACKEND="console", MOCK_OTP_CODE="11111"):
             phone = "09509999998"
             issue_otp(phone)
-            response = APIClient().post("/api/v1/auth/otp/verify/", {"phone_number": phone, "code": "11111", "first_name": "کاربر", "last_name": "آزمایشی", "national_code": "0084575948", "birth_date": "1990-01-01", "role": "patient", "is_staff": True, "is_superuser": True, "can_manage_accounts": True}, format="json")
-            self.assertEqual(response.status_code, 200, response.data)
-            user = User.objects.get(phone_number=phone)
-            self.assertFalse(user.is_staff)
-            self.assertFalse(user.is_superuser)
-            self.assertFalse(response.data["user"]["can_manage_accounts"])
+            verification = APIClient().post("/api/v1/auth/otp/verify/", {"phone_number": phone, "code": "11111"}, format="json")
+            response = APIClient().post("/api/v1/auth/register/", {"registration_token": verification.data["registration_token"], "first_name": "کاربر", "last_name": "آزمایشی", "national_code": "0084575948", "birth_date": "1990-01-01", "role": "patient", "is_staff": True, "is_superuser": True, "can_manage_accounts": True}, format="json")
+        self.assertEqual(response.status_code, 201, response.data)
+        user = User.objects.get(phone_number=phone)
+        self.assertFalse(user.is_staff)
+        self.assertFalse(user.is_superuser)
+        self.assertFalse(response.data["user"]["can_manage_accounts"])

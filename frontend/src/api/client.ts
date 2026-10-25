@@ -52,15 +52,18 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   return body as T;
 }
 
+type LoginResult = { access: string; refresh: string; user: import("../types").User };
+type OTPVerificationResult = ({ registration_required: false } & LoginResult) | { registration_required: true; registration_token: string };
+
 export const authApi = {
   managedAccounts: (params: URLSearchParams, signal?: AbortSignal) => api<import("../types").ManagedAccountList>(`/auth/management/accounts/?${params}`, { signal }),
   reviewAccount: (id: string, is_verified: boolean) => api<import("../types").ManagedAccount>(`/auth/management/accounts/${id}/`, { method: "PATCH", body: JSON.stringify({ is_verified }) }),
   aiSettings: () => api<import("../types").AISettingsStatus>("/auth/settings/ai/"),
   saveAiSettings: (openai_api_key: string) => api<import("../types").AISettingsStatus>("/auth/settings/ai/", { method: "PUT", body: JSON.stringify({ openai_api_key }) }),
   removeAiKey: () => api<import("../types").AISettingsStatus>("/auth/settings/ai/", { method: "DELETE" }),
-  checkPhone: (phone_number: string) => api<{ is_registered: boolean; is_mock: boolean; development_code?: string }>("/auth/phone/check/", { method: "POST", body: JSON.stringify({ phone_number }), authenticated: false }),
-  requestOtp: (phone_number: string) => api<{ detail: string; is_registered: boolean; is_mock: boolean; development_code?: string }>("/auth/otp/request/", { method: "POST", body: JSON.stringify({ phone_number }), authenticated: false }),
-  verifyOtp: (payload: Record<string, string>) => api<{ access: string; refresh: string; user: import("../types").User }>("/auth/otp/verify/", { method: "POST", body: JSON.stringify(payload), authenticated: false }),
+  requestOtp: (phone_number: string) => api<{ detail: string; is_mock: boolean; development_code?: string }>("/auth/otp/request/", { method: "POST", body: JSON.stringify({ phone_number }), authenticated: false }),
+  verifyOtp: (payload: Record<string, string>) => api<OTPVerificationResult>("/auth/otp/verify/", { method: "POST", body: JSON.stringify(payload), authenticated: false }),
+  register: (payload: Record<string, string>) => api<LoginResult>("/auth/register/", { method: "POST", body: JSON.stringify(payload), authenticated: false }),
   me: () => api<import("../types").User>("/auth/me/"),
   recordAccess: (path: string) => api<void>("/auth/access/", {
     method: "POST",
