@@ -6,8 +6,6 @@ html[dir="ltr"] { direction: ltr; }
 .language-switcher button:focus-visible { outline: 2px solid var(--sage); outline-offset: 2px; }
 .auth-panel { position: relative; }
 .auth-panel > .language-switcher { position: absolute; inset-block-start: 20px; inset-inline-end: 20px; }
-.logo-wordmark { display: inline-flex; align-items: center; justify-content: center; gap: 9px; color: var(--forest); font-size: 27px; font-weight: 800; letter-spacing: -1px; }
-.logo-wordmark img { width: 40px; height: 40px; }
 [dir="ltr"] .case-row, [dir="ltr"] .birth-date-trigger { text-align: left; }
 [dir="ltr"] .case-row__main small, [dir="ltr"] .toast { direction: ltr; }
 [dir="ltr"] .sidebar { border-left: 0; border-right: 1px solid var(--line); }

@@ -74,8 +74,7 @@
     padding: 28px clamp(22px, 6vw, 48px) 52px;
   }
   .auth-visual__content { max-width: 620px; margin: auto; }
-  .auth-visual__icon { width: 58px; height: 58px; margin: 0 0 12px; border-radius: 17px; }
-  .auth-visual__icon img { width: 39px; height: 39px; }
+  .auth-visual__brand { width: 174px; height: 70px; padding: 10px; margin: 0 0 12px; border-radius: 12px; }
   .auth-visual h1 { margin: 0; font-size: clamp(24px, 4vw, 34px); line-height: 1.5; }
   .auth-visual p { margin: 4px 0 0; font-size: 13px; line-height: 1.9; }
   .auth-visual .trust-row { display: none; }

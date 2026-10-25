@@ -103,7 +103,7 @@ export function LoginPage() {
     <Toast message={error} tone="error" onDismiss={() => setError("")} />
     <section className="auth-visual">
       <div className="auth-visual__content">
-        <span className="auth-visual__icon"><img src="/brand/orthomed-icon-clean.svg" alt="" /></span>
+        <span className="auth-visual__brand"><Logo /></span>
         <h1>{t("تصمیم بهتر، درمان مطمئن‌تر")}</h1>
         <p>{t("ارزیابی یکپارچه تصاویر رادیولوژی و علائم بالینی برای تصمیم‌گیری شفاف درباره جراحی زانو.")}</p>
         <div className="trust-row"><span><ShieldCheck size={18} />  {t("حفاظت از داده پزشکی")}</span><span><Check size={18} />  {t("بررسی پزشک متخصص")}</span></div>
