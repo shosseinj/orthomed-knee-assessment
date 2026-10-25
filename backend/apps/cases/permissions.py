@@ -18,7 +18,7 @@ class CaseAccessPermission(BasePermission):
         if request.user.role == User.Role.DOCTOR:
             if case.status == case.Status.DRAFT:
                 return case.managing_doctor_id == request.user.id
-            is_assessment_write = getattr(view, "action", None) == "doctor_assessment"
+            is_assessment_write = getattr(view, "action", None) in ("doctor_assessment", "ai_assessment", "womac")
             return request.method in SAFE_METHODS or is_assessment_write
         if request.user.role == User.Role.INSURANCE:
             is_decision_write = getattr(view, "action", None) == "insurance_decision"

@@ -17,6 +17,27 @@ export class ApiError extends Error {
   }
 }
 
+export function apiErrorMessage(error: unknown, fallback: string): string {
+  if (!(error instanceof ApiError)) return t(fallback);
+  function messages(value: unknown): string[] {
+    if (typeof value === "string") return [t(value)];
+    if (Array.isArray(value)) return value.flatMap(messages);
+    if (value && typeof value === "object") return Object.values(value).flatMap(messages);
+    return [];
+  }
+  return [...new Set(messages(error.body))].join(" ") || t(fallback);
+}
+
+export function apiFieldErrors(error: unknown): Record<string, string> {
+  if (!(error instanceof ApiError) || !error.body || typeof error.body !== "object") return {};
+  const data = error.body as Record<string, unknown>;
+  const errors = data.errors && typeof data.errors === "object" ? data.errors : data;
+  return Object.fromEntries(Object.entries(errors).flatMap(([key, value]) => {
+    const messages = Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : typeof value === "string" ? [value] : [];
+    return messages.length ? [[key, messages.map((message) => t(message)).join(" ")]] : [];
+  }));
+}
+
 export async function api<T>(path: string, options: ApiOptions = {}): Promise<T> {
   const headers = new Headers(options.headers);
   headers.set("Accept-Language", locale());
@@ -32,8 +53,13 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
 }
 
 export const authApi = {
-  checkPhone: (phone_number: string) => api<{ is_registered: boolean; is_mock: boolean }>("/auth/phone/check/", { method: "POST", body: JSON.stringify({ phone_number }), authenticated: false }),
-  requestOtp: (phone_number: string) => api<{ detail: string; is_registered: boolean; is_mock: boolean }>("/auth/otp/request/", { method: "POST", body: JSON.stringify({ phone_number }), authenticated: false }),
+  managedAccounts: (params: URLSearchParams, signal?: AbortSignal) => api<import("../types").ManagedAccountList>(`/auth/management/accounts/?${params}`, { signal }),
+  reviewAccount: (id: string, is_verified: boolean) => api<import("../types").ManagedAccount>(`/auth/management/accounts/${id}/`, { method: "PATCH", body: JSON.stringify({ is_verified }) }),
+  aiSettings: () => api<import("../types").AISettingsStatus>("/auth/settings/ai/"),
+  saveAiSettings: (openai_api_key: string) => api<import("../types").AISettingsStatus>("/auth/settings/ai/", { method: "PUT", body: JSON.stringify({ openai_api_key }) }),
+  removeAiKey: () => api<import("../types").AISettingsStatus>("/auth/settings/ai/", { method: "DELETE" }),
+  checkPhone: (phone_number: string) => api<{ is_registered: boolean; is_mock: boolean; development_code?: string }>("/auth/phone/check/", { method: "POST", body: JSON.stringify({ phone_number }), authenticated: false }),
+  requestOtp: (phone_number: string) => api<{ detail: string; is_registered: boolean; is_mock: boolean; development_code?: string }>("/auth/otp/request/", { method: "POST", body: JSON.stringify({ phone_number }), authenticated: false }),
   verifyOtp: (payload: Record<string, string>) => api<{ access: string; refresh: string; user: import("../types").User }>("/auth/otp/verify/", { method: "POST", body: JSON.stringify(payload), authenticated: false }),
   me: () => api<import("../types").User>("/auth/me/"),
   recordAccess: (path: string) => api<void>("/auth/access/", {
@@ -54,6 +80,8 @@ export const casesApi = {
   saveQuestionnaire: (id: string, data: import("../types").Questionnaire) => api(`/cases/${id}/questionnaire/`, { method: "PUT", body: JSON.stringify(data) }),
   saveWomac: (id: string, responses: Record<string, number>, supplemental_responses: Record<string, number>) => api(`/cases/${id}/womac/`, { method: "PUT", body: JSON.stringify({ responses, supplemental_responses }) }),
   uploadImage: (id: string, data: FormData) => api(`/cases/${id}/images/`, { method: "POST", body: data }),
+  deleteImage: (id: string) => api<void>(`/images/${id}/`, { method: "DELETE" }),
+  requestAiAssessment: (id: string) => api<import("../types").Assessment>(`/cases/${id}/ai-assessment/`, { method: "POST", body: JSON.stringify({}) }),
   submit: (id: string) => api(`/cases/${id}/submit/`, { method: "POST", body: JSON.stringify({}) }),
   saveDoctorAssessment: (id: string, data: Record<string, unknown>) => api(`/cases/${id}/doctor-assessment/`, { method: "PUT", body: JSON.stringify(data) }),
   saveInsuranceDecision: (id: string, data: Record<string, unknown>) => api(`/cases/${id}/insurance-decision/`, { method: "PUT", body: JSON.stringify(data) }),

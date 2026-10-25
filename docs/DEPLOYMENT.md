@@ -33,11 +33,11 @@ Both must print only `82.115.20.247` before requesting the certificate.
 
 ## 2. Review production environment
 
-The server's ignored `.env` has already been switched to the production
-hostname, same-origin API, and disabled debug. The production Compose file
-keeps one explicit acceptance-test lane enabled: only numbers beginning with
-`0950` bypass SMS.ir and accept `12345`. Normal mobile numbers still use
-SMS.ir. Confirm the non-secret values without printing credentials:
+Set the production `.env` to the correct hostname, same-origin API, and
+`DJANGO_DEBUG=false`. The production Compose file disables mock OTP. The
+development code `11111` is unavailable when debug is disabled; production
+uses randomly generated codes through the configured OTP provider.
+Confirm the non-secret values without printing credentials:
 
 ```bash
 cd /root/sharifclinic/AI/KneeWebsite

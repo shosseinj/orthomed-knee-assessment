@@ -44,8 +44,19 @@ def get_sms_gateway() -> SMSGateway:
     return SMSIRGateway() if settings.OTP_BACKEND == "smsir" else ConsoleSMSGateway()
 
 
+def is_mock_otp(phone_number: str) -> bool:
+    return settings.DEBUG and settings.ENABLE_MOCK_OTP and (
+        settings.OTP_BACKEND == "console" or phone_number.startswith(settings.MOCK_OTP_PREFIX)
+    )
+
+
+def otp_metadata(phone_number: str) -> dict:
+    is_mock = is_mock_otp(phone_number)
+    return {"is_mock": is_mock, **({"development_code": settings.MOCK_OTP_CODE} if is_mock else {})}
+
+
 def issue_otp(phone_number: str) -> OTPChallenge:
-    is_mock = settings.ENABLE_MOCK_OTP and phone_number.startswith(settings.MOCK_OTP_PREFIX)
+    is_mock = is_mock_otp(phone_number)
     code = settings.MOCK_OTP_CODE if is_mock else str(secrets.randbelow(90000) + 10000)
     challenge = OTPChallenge.objects.create(
         phone_number=phone_number,
@@ -53,7 +64,7 @@ def issue_otp(phone_number: str) -> OTPChallenge:
         expires_at=OTPChallenge.expiry_time(),
     )
     if is_mock:
-        logger.info("Mock OTP issued for test number %s", phone_number)
+        logger.info("Development OTP issued for %s", phone_number)
     else:
         get_sms_gateway().send_otp(phone_number, code)
     return challenge

@@ -1,4 +1,6 @@
 from django.conf import settings
+from django.views.decorators.debug import sensitive_variables, sensitive_post_parameters
+from django.utils.decorators import method_decorator
 from rest_framework import status
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.permissions import AllowAny
@@ -6,8 +8,32 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from .access_audit import AccessEventKind, record_access
-from .models import User
-from .serializers import AccountSelfSerializer, OTPRequestSerializer, OTPVerifySerializer, PanelAccessSerializer, PatientProfileSerializer
+from .models import AISettings, User
+from .ai_settings import save_api_key, settings_status
+from .services import otp_metadata
+from .serializers import AISettingsSerializer, AccountSelfSerializer, OTPRequestSerializer, OTPVerifySerializer, PanelAccessSerializer, PatientProfileSerializer
+
+
+@method_decorator(sensitive_post_parameters("openai_api_key"), name="dispatch")
+class AISettingsView(APIView):
+    def finalize_response(self, request, response, *args, **kwargs):
+        response = super().finalize_response(request, response, *args, **kwargs)
+        response["Cache-Control"] = "private, no-store"
+        return response
+
+    def get(self, request):
+        return Response(settings_status(request.user))
+
+    @sensitive_variables()
+    def put(self, request):
+        serializer = AISettingsSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        save_api_key(request.user, serializer.validated_data["openai_api_key"])
+        return Response(settings_status(request.user))
+
+    def delete(self, request):
+        AISettings.objects.filter(user=request.user).delete()
+        return Response(settings_status(request.user))
 
 
 class OTPRequestView(APIView):
@@ -22,7 +48,7 @@ class OTPRequestView(APIView):
         return Response({
             "detail": "کد تأیید آماده شد.",
             "is_registered": is_registered,
-            "is_mock": settings.ENABLE_MOCK_OTP and phone_number.startswith(settings.MOCK_OTP_PREFIX),
+            **otp_metadata(phone_number),
         }, status=status.HTTP_202_ACCEPTED)
 
 
@@ -35,7 +61,7 @@ class PhoneCheckView(APIView):
         phone_number = serializer.validated_data["phone_number"]
         return Response({
             "is_registered": User.objects.filter(phone_number=phone_number).exists(),
-            "is_mock": settings.ENABLE_MOCK_OTP and phone_number.startswith(settings.MOCK_OTP_PREFIX),
+            **otp_metadata(phone_number),
         })
 
 

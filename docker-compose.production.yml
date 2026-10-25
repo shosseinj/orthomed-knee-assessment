@@ -38,11 +38,7 @@ services:
       # The edge proxy replaces X-Real-IP; the backend has no public host port.
       ACCESS_AUDIT_TRUST_PROXY_IP: "true"
       GEOIP_CITY_DB_PATH: /app/geoip/GeoLite2-City.mmdb
-      # Explicit test lane requested for deployed acceptance testing. Only
-      # numbers with this reserved prefix bypass SMS.ir.
-      ENABLE_MOCK_OTP: "true"
-      MOCK_OTP_PREFIX: "0950"
-      MOCK_OTP_CODE: "12345"
+      ENABLE_MOCK_OTP: "false"
     expose:
       - "8000"
     volumes:

@@ -6,6 +6,7 @@ from django.conf import settings
 
 from .models import Assessment
 from .questionnaires import KNEE_SUPPLEMENTAL_ITEMS, WOMAC_ITEMS
+from .intake import previsit_scores
 
 
 class AIProviderError(RuntimeError):
@@ -19,6 +20,9 @@ class AIAssessmentProvider:
 
 class OpenAIProvider(AIAssessmentProvider):
     """OpenAI Chat Completions vision adapter with a strict JSON result."""
+
+    def __init__(self, api_key=None):
+        self.api_key = settings.OPENAI_API_KEY if api_key is None else api_key
 
     system_prompt = """
 شما یک ابزار پشتیبان تصمیم بالینی برای ارزیابی اولیه آرتروز زانو هستید، نه جایگزین پزشک.
@@ -111,11 +115,19 @@ requires_further_examination را مشخص کنید و در rationale صریحا
             },
             "supplemental_knee_symptoms_not_part_of_womac": supplemental_questions,
         }
+        from .serializers import AssessmentSerializer, QuestionnaireSerializer
+        clinical_context["previsit_questionnaire"] = QuestionnaireSerializer(questionnaire).data
+        clinical_context["previsit_scores"] = previsit_scores(case)
+        doctor = case.assessments.filter(source=Assessment.Source.DOCTOR).first()
+        if doctor:
+            clinical_context["doctor_examination"] = AssessmentSerializer(doctor).data
         content = [{
             "type": "text",
             "text": "داده بالینی بیمار:\n" + json.dumps(clinical_context, ensure_ascii=False),
         }]
-        content.extend(self._image_content(image) for image in case.images.all())
+        for image in case.images.all():
+            content.append({"type": "text", "text": "تصویر آزمایش (رادیوگرافی نیست)" if image.purpose == "lab" else "رادیوگرافی زانو"})
+            content.append(self._image_content(image))
         payload = {
             "model": settings.OPENAI_MODEL,
             "store": False,
@@ -129,10 +141,14 @@ requires_further_examination را مشخص کنید و در rationale صریحا
         try:
             response = requests.post(
                 settings.OPENAI_API_URL,
-                headers={"Authorization": f"Bearer {settings.OPENAI_API_KEY}", "Content-Type": "application/json"},
+                headers={"Authorization": f"Bearer {self.api_key}", "Content-Type": "application/json"},
                 json=payload,
                 timeout=120,
             )
+            if response.status_code == 401:
+                raise AIProviderError("کلید OpenAI پذیرفته نشد؛ آن را در تنظیمات بررسی یا جایگزین کنید.")
+            if response.status_code == 429:
+                raise AIProviderError("سقف مصرف یا تعداد درخواست‌های OpenAI رسیده است؛ اعتبار و محدودیت حساب خود را بررسی کنید.")
             response.raise_for_status()
             body = response.json()
             result = json.loads(body["choices"][0]["message"]["content"])
@@ -155,11 +171,12 @@ requires_further_examination را مشخص کنید و در rationale صریحا
         return result
 
 
-def request_ai_assessment(case):
+def request_ai_assessment(case, api_key=None):
     """Synchronous MVP seam; invoke this through a task queue in production."""
-    if not settings.OPENAI_API_KEY:
+    api_key = settings.OPENAI_API_KEY if api_key is None else api_key
+    if not api_key:
         return None
-    result = OpenAIProvider().assess(case)
+    result = OpenAIProvider(api_key).assess(case)
     rationale = result["rationale"].strip()
     follow_up_label = "بله" if result["requires_further_examination"] else "خیر"
     if "نیاز به بررسی تکمیلی:" not in rationale:

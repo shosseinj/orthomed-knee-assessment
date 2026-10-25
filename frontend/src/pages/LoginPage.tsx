@@ -29,6 +29,7 @@ export function LoginPage() {
   const [organizationName, setOrganizationName] = useState("");
   const [isNewUser, setIsNewUser] = useState(false);
   const [isMock, setIsMock] = useState(false);
+  const [developmentCode, setDevelopmentCode] = useState("");
   const [accepted, setAccepted] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -40,7 +41,7 @@ export function LoginPage() {
     return () => window.clearInterval(timer);
   }, [seconds]);
 
-  if (user) return <Navigate to="/dashboard" replace />;
+  if (user) return <Navigate to={user.can_manage_accounts ? "/management" : "/dashboard"} replace />;
 
   async function checkPhone(event: FormEvent) {
     event.preventDefault();
@@ -49,9 +50,11 @@ export function LoginPage() {
       const result = await authApi.checkPhone(phone);
       setIsNewUser(!result.is_registered);
       setIsMock(result.is_mock);
+      setDevelopmentCode(result.development_code || "");
       if (result.is_registered) {
         const delivery = await authApi.requestOtp(phone);
         setIsMock(delivery.is_mock);
+        setDevelopmentCode(delivery.development_code || "");
         setStep("otp"); setSeconds(120);
       } else {
         setStep("signup");
@@ -71,6 +74,7 @@ export function LoginPage() {
     try {
       const result = await authApi.requestOtp(phone);
       setIsMock(result.is_mock);
+      setDevelopmentCode(result.development_code || "");
       setStep("otp"); setSeconds(120);
     } catch {
       setError(t("ارسال کد تأیید ممکن نشد. کمی بعد دوباره تلاش کنید."));
@@ -84,7 +88,7 @@ export function LoginPage() {
       if (isNewUser) Object.assign(payload, { first_name: firstName, last_name: lastName, national_code: normalizeNationalCode(nationalCode), birth_date: birthDate, role, medical_council_number: medicalCouncilNumber, organization_name: organizationName });
       const result = await authApi.verifyOtp(payload);
       login(result.access, result.refresh, result.user);
-      navigate("/dashboard");
+      navigate(result.user.can_manage_accounts ? "/management" : "/dashboard");
     } catch (err) {
       if (err instanceof ApiError) {
         const errors = (err.body as { errors?: Record<string, string[] | string> })?.errors;
@@ -131,7 +135,7 @@ export function LoginPage() {
           </form>
         </> : <>
           <button className="text-button auth-back" onClick={() => setStep("phone")}>{t("تغییر شماره")}</button>
-          <div className="auth-card__heading"><span className="otp-icon"><LockKeyhole /></span><h2>{isNewUser ? t("تأیید شماره موبایل") : t("ورود به ارتومد")}</h2><p>{isMock ? <>{t("برای شماره آزمایشی، کد")} <b dir="ltr">12345</b>  {t("را وارد کنید.")}</> : <>{t("کد پنج‌رقمی به شماره")} <b dir="ltr">{phone}</b>  {t("ارسال شد.")}</>}</p></div>
+          <div className="auth-card__heading"><span className="otp-icon"><LockKeyhole /></span><h2>{isNewUser ? t("تأیید شماره موبایل") : t("ورود به ارتومد")}</h2><p>{isMock ? <>{t("در حالت توسعه، کد")} <b dir="ltr">{developmentCode}</b>  {t("را وارد کنید.")}</> : <>{t("کد پنج‌رقمی به شماره")} <b dir="ltr">{phone}</b>  {t("ارسال شد.")}</>}</p></div>
           <form onSubmit={verify}>
             <label className="field"><span>{t("کد تأیید")}</span><input className="otp-input" dir="ltr" inputMode="numeric" maxLength={5} autoFocus placeholder="— — — — —" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} /></label>
             <button className="button button--wide" disabled={code.length !== 5 || loading}>{loading ? t("در حال بررسی...") : isNewUser ? t("تأیید و ساخت حساب") : t("تأیید و ورود")}</button>

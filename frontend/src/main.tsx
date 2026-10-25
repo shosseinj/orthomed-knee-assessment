@@ -7,6 +7,7 @@ import "./styles/global.css";
 import "./styles/responsive.css";
 import "./styles/toast.css";
 import "./styles/i18n.css";
+import "./styles/previsit.css";
 
 ReactDOM.createRoot(document.getElementById("root")!).render(
   <React.StrictMode><BrowserRouter><AuthProvider><App /></AuthProvider></BrowserRouter></React.StrictMode>,

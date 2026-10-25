@@ -1,3 +1,4 @@
+import { fillPrevisit } from "./intake-helpers";
 import { expect, test, type Page } from "@playwright/test";
 
 const user = { id: "test-user", phone_number: "09501234567", first_name: "Alex", last_name: "Patient", full_name: "Alex Patient", national_code: "0013520822", birth_date: "1985-04-20", role: "patient", is_verified: true };
@@ -34,9 +35,9 @@ test("switching languages preserves intake answers and canonical medical values"
   await page.locator("select").nth(0).selectOption("female");
   await page.locator('input[type="number"]').nth(1).fill("170");
   await page.locator('input[type="number"]').nth(2).fill("75");
-  await page.locator("label.choice").filter({ hasText: "Physiotherapy" }).click();
+  await fillPrevisit(page);
   await page.getByRole("button", { name: "فارسی", exact: true }).click();
-  await expect(page.getByLabel("فیزیوتراپی", { exact: true })).toBeChecked();
+  await expect(page.getByLabel("فیزیوتراپی", { exact: false }).first()).toHaveValue("10_plus");
   await expect(page.locator('input[type="number"]').nth(0)).toHaveValue("67");
   await page.getByRole("button", { name: "English", exact: true }).click();
   const request = page.waitForRequest((request) => request.url().endsWith("/questionnaire/") && request.method() === "PUT");

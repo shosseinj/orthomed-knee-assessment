@@ -317,7 +317,7 @@ class OpenAIProviderTests(TestCase):
             payload["response_format"]["json_schema"]["schema"]["properties"]["kl_grade"]["type"],
             "integer",
         )
-        self.assertTrue(payload["messages"][1]["content"][1]["image_url"]["url"].startswith("data:image/png;base64,"))
+        self.assertTrue(any(item.get("image_url", {}).get("url", "").startswith("data:image/png;base64,") for item in payload["messages"][1]["content"]))
         clinical_context = json.loads(payload["messages"][1]["content"][0]["text"].split("\n", 1)[1])
         self.assertIn("had_intra_articular_injection", clinical_context)
         self.assertEqual(len(clinical_context["womac"]["responses"]), 24)

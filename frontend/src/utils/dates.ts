@@ -1,4 +1,4 @@
-import { t } from "../i18n";
+import { t, locale } from "../i18n";
 const persianDateParts = new Intl.DateTimeFormat("en-US-u-ca-persian", {
   year: "numeric", month: "numeric", day: "numeric", timeZone: "UTC",
 });
@@ -26,6 +26,15 @@ export function formatPersianDate(value?: string | null): string {
   if (!value) return t("ثبت نشده");
   return isoDateToUtc(value).toLocaleDateString("fa-IR-u-ca-persian", {
     year: "numeric", month: "long", day: "numeric", timeZone: "UTC",
+  });
+}
+
+export function formatDate(value?: string | null): string {
+  if (!value) return t("ثبت نشده");
+  const dateOnly = /^\d{4}-\d{2}-\d{2}$/.test(value);
+  const date = dateOnly ? isoDateToUtc(value) : new Date(value);
+  return date.toLocaleDateString(locale() === "fa-IR" ? "fa-IR-u-ca-persian" : "en-US-u-ca-gregory", {
+    year: "numeric", month: "long", day: "numeric", ...(dateOnly ? { timeZone: "UTC" } : {}),
   });
 }
 

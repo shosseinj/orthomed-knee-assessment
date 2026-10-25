@@ -32,6 +32,9 @@ class User(AbstractBaseUser, PermissionsMixin):
     objects = UserManager()
     USERNAME_FIELD = "phone_number"
 
+    class Meta:
+        permissions = [("manage_account_verifications", "Can approve and revoke doctor and insurance accounts")]
+
     @property
     def full_name(self):
         if self.role == self.Role.INSURANCE and self.organization_name:
@@ -40,6 +43,13 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.full_name
+
+
+class AISettings(models.Model):
+    user = models.OneToOneField(User, on_delete=models.CASCADE, related_name="ai_settings")
+    encrypted_api_key = models.TextField()
+    key_last_four = models.CharField(max_length=4)
+    updated_at = models.DateTimeField(auto_now=True)
 
 
 class OTPChallenge(models.Model):

@@ -12,6 +12,7 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 
 from apps.accounts.models import User
+from apps.accounts.ai_settings import AIKeyUnavailable, get_api_key
 from apps.accounts.serializers import normalize_phone
 from .catalogs import SUPPORTED_CATALOGS, search_catalog
 from .models import Assessment, DoctorPatient, InsuranceDecision, MedicalCase, QuestionnaireResponse, WOMACResponse, XRayImage
@@ -105,9 +106,10 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["put"], url_path="womac")
     def womac(self, request, pk=None):
         case = self.get_object()
-        if case.status != MedicalCase.Status.DRAFT:
-            raise ValidationError("پرونده ثبت‌شده قابل ویرایش نیست.")
         instance = WOMACResponse.objects.filter(case=case).first()
+        can_complete_missing = request.user.role == User.Role.DOCTOR and request.user.is_verified and case.status == MedicalCase.Status.SUBMITTED and instance is None
+        if case.status != MedicalCase.Status.DRAFT and not can_complete_missing:
+            raise ValidationError("پرونده ثبت‌شده قابل ویرایش نیست.")
         serializer = WOMACSerializer(instance, data=request.data)
         serializer.is_valid(raise_exception=True)
         serializer.save(case=case)
@@ -134,10 +136,34 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
         try:
-            request_ai_assessment(case)
-        except AIProviderError:
+            request_ai_assessment(case, api_key=get_api_key(request.user))
+        except (AIProviderError, AIKeyUnavailable):
             logger.exception("AI assessment failed for case %s; the case remains submitted", case.id)
         return Response(MedicalCaseDetailSerializer(case, context={"request": request}).data)
+
+    @action(detail=True, methods=["post"], url_path="ai-assessment")
+    def ai_assessment(self, request, pk=None):
+        if request.user.role != User.Role.DOCTOR or not request.user.is_verified:
+            raise PermissionDenied("تنها پزشک تأییدشده می‌تواند تحلیل هوش مصنوعی را درخواست کند.")
+        case = self.get_object()
+        existing = case.assessments.filter(source=Assessment.Source.AI).first()
+        if existing:
+            return Response(AssessmentSerializer(existing, context={"request": request}).data)
+        if case.status == MedicalCase.Status.DRAFT or not hasattr(case, "questionnaire") or not hasattr(case, "womac") or not case.images.filter(purpose="xray").exists():
+            raise ValidationError("ابتدا شرح حال، WOMAC و تصویر زانو را تکمیل و پرونده را ارسال کنید.")
+        try:
+            api_key = get_api_key(request.user)
+        except AIKeyUnavailable:
+            return Response({"detail": "کلید ذخیره‌شده قابل خواندن نیست؛ آن را دوباره در تنظیمات وارد کنید."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        if not api_key:
+            return Response({"detail": "سرویس هوش مصنوعی پیکربندی نشده است؛ کلید OpenAI خود را در تنظیمات وارد کنید."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+        try:
+            assessment = request_ai_assessment(case, api_key=api_key)
+        except AIProviderError as exc:
+            logger.warning("Doctor-requested AI assessment failed for case %s", case.id)
+            detail = str(exc) if str(exc) in ("کلید OpenAI پذیرفته نشد؛ آن را در تنظیمات بررسی یا جایگزین کنید.", "سقف مصرف یا تعداد درخواست‌های OpenAI رسیده است؛ اعتبار و محدودیت حساب خود را بررسی کنید.") else "دریافت پاسخ از سرویس هوش مصنوعی ممکن نشد. دوباره تلاش کنید."
+            return Response({"detail": detail}, status=status.HTTP_502_BAD_GATEWAY)
+        return Response(AssessmentSerializer(assessment, context={"request": request}).data)
 
     @action(detail=True, methods=["put"], url_path="doctor-assessment")
     def doctor_assessment(self, request, pk=None):
@@ -196,4 +222,5 @@ class XRayImageViewSet(viewsets.GenericViewSet):
         if image.case.status != MedicalCase.Status.DRAFT:
             raise ValidationError("تصویر پرونده ثبت‌شده قابل حذف نیست.")
         image.delete()
+        image.image.delete(save=False)
         return Response(status=status.HTTP_204_NO_CONTENT)

@@ -1,3 +1,4 @@
+import { formatDate } from "../utils/dates";
 import { t, locale, useLocale } from "../i18n";
 import { ArrowLeft, BrainCircuit, CheckCircle2, Clock3, FileSearch, LoaderCircle, Phone, Plus, RefreshCw, Search, ShieldCheck, Stethoscope, Trash2, UserPlus } from "lucide-react";
 import { FormEvent, useEffect, useMemo, useState } from "react";
@@ -103,7 +104,7 @@ export function DashboardPage() {
       {loading ? <div className="skeleton-list"><i /><i /><i /></div> : visible.length === 0 ? <EmptyState canCreate={user?.role === "patient"} onCreate={createCase} /> : <div className="case-list">
         {visible.map((item) => <div className="case-row" role="button" tabIndex={0} key={item.id} onClick={() => navigate(`/cases/${item.id}`)} onKeyDown={(event) => { if (event.currentTarget === event.target && event.key === "Enter") navigate(`/cases/${item.id}`); }}>
           <span className="case-row__avatar">{item.patient.first_name?.[0] || t("ل")}{item.patient.last_name?.[0] || t("م")}</span>
-          <span className="case-row__main"><strong>{user?.role === "patient" ? t(item.title) : item.patient.full_name}</strong><small>{t("کد")} {item.id.slice(0, 8).toUpperCase()} · {new Date(item.created_at).toLocaleDateString(locale())}</small></span>
+          <span className="case-row__main"><strong>{user?.role === "patient" ? t(item.title) : item.patient.full_name}</strong><small>{t("کد")} {item.id.slice(0, 8).toUpperCase()} · {formatDate(item.created_at)}</small></span>
           {user?.role !== "patient" && <span className="case-row__signals"><span className={item.has_ai_assessment ? "done" : ""}><BrainCircuit size={16} /> AI</span><span className={item.has_doctor_assessment ? "done" : ""}><Stethoscope size={16} />  {t("پزشک")}</span></span>}
           <StatusBadge status={item.status} label={item.status_label} /><span className="case-row__actions">{item.can_edit_intake && item.status === "draft" && <button type="button" className="row-delete" aria-label={t("حذف پیش‌نویس")} onClick={(event) => { event.stopPropagation(); setDeleteTarget(item); }}><Trash2 size={17} /></button>}<ArrowLeft className="case-row__arrow" size={20} /></span>
         </div>)}

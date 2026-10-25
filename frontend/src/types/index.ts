@@ -1,6 +1,13 @@
+import type { PrevisitAnswers, DoctorExamination } from "../data/previsit";
 export type Role = "patient" | "doctor" | "insurance";
 export type CaseStatus = "draft" | "submitted" | "under_review" | "completed";
 export type Verdict = "surgery" | "no_surgery" | "inconclusive";
+
+export interface AISettingsStatus {
+  has_api_key: boolean;
+  key_last_four: string;
+  server_key_configured: boolean;
+}
 
 export interface User {
   id: string;
@@ -15,6 +22,16 @@ export interface User {
   organization_name?: string;
   is_verified: boolean;
   audit_access?: boolean;
+  can_manage_accounts?: boolean;
+}
+
+export interface ManagedAccount extends User {
+  is_active: boolean;
+  date_joined: string;
+}
+
+export interface ManagedAccountList extends Paginated<ManagedAccount> {
+  summary: { total: number; pending: number; verified: number; inactive: number };
 }
 
 export interface DoctorPatientAssignment {
@@ -23,7 +40,7 @@ export interface DoctorPatientAssignment {
   created_at: string;
 }
 
-export interface Questionnaire {
+export interface Questionnaire extends PrevisitAnswers {
   age_years: number | null;
   gender: "female" | "male" | "other" | "";
   underlying_conditions: string[];
@@ -72,11 +89,12 @@ export interface WOMACResponse {
 export interface XRayImage {
   id: string;
   image_url: string;
+  purpose?: "xray" | "lab";
   view: string;
   uploaded_at: string;
 }
 
-export interface Assessment {
+export interface Assessment extends DoctorExamination {
   id: string;
   source: "doctor" | "ai";
   source_label: string;
@@ -128,6 +146,7 @@ export interface MedicalCase {
   images?: XRayImage[];
   assessments?: Assessment[];
   insurance_decision?: InsuranceDecision | null;
+  previsit_scores?: { a: number; b: number; c: number; color: string; action: string; risk_unknown: boolean; other_red_flag: boolean } | null;
 }
 
 export interface Paginated<T> {

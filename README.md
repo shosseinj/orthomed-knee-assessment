@@ -60,7 +60,15 @@ source .venv/bin/activate
 python backend/manage.py createsuperuser
 ```
 
-Django Admin is available at [http://localhost:8000/admin/](http://localhost:8000/admin/). Doctor and insurance accounts require administrator verification before they can access cases.
+The app's **System administrator** page is available at [http://localhost:5173/management](http://localhost:5173/management). Sign in through the normal verification-code flow with an administrator account. Administrators can search doctor and insurance accounts, filter by approval status, approve/activate accounts, and revoke approval. A doctor's existing session can use the **Check approval status** button after approval; a new login is not required. Account changes are recorded in Django's admin log.
+
+Superusers created with `createsuperuser` can access this page. To grant only account-verification management to an existing registered account, run this locally, substituting that account's mobile number:
+
+```bash
+python backend/manage.py grant_account_manager <registered-mobile-number>
+```
+
+This grants the dedicated `accounts.manage_account_verifications` permission, without superuser access or permission to edit account roles. Administrator access cannot be selected at public registration or granted from the account-approval page. Django Admin remains available at [http://localhost:8000/admin/](http://localhost:8000/admin/).
 
 ## Run with Docker
 
@@ -73,7 +81,7 @@ Open [http://localhost:5173](http://localhost:5173). Both services listen on all
 
 ## Development authentication
 
-With `OTP_BACKEND=console`, verification codes are printed in the backend terminal; no SMS is sent. With `ENABLE_MOCK_OTP=true`, test numbers beginning with `0950` accept the fixed code `12345`. New users still complete registration and identity fields. Set `ENABLE_MOCK_OTP=false` for real deployments.
+With `DJANGO_DEBUG=true`, `OTP_BACKEND=console`, and `ENABLE_MOCK_OTP=true`, all mobile numbers use the development verification code **`11111`** without sending SMS. The sign-in screen shows the configured development code. Request a new code before entering it; codes still expire and can only be used once. New users still complete registration and identity fields. With `DJANGO_DEBUG=false`, fixed development codes are disabled, even if the mock flag is enabled. Configure the production OTP provider and set `ENABLE_MOCK_OTP=false` for deployment.
 
 ## Configuration
 
@@ -90,10 +98,15 @@ Copy `.env.example` to `.env`; keep real credentials out of Git.
 | `ENABLE_MOCK_OTP` | Enables the development test-number flow |
 | `SMSIR_API_KEY`, `SMSIR_TEMPLATE_ID` | SMS.ir credentials and template |
 | `OPENAI_API_KEY`, `OPENAI_API_URL`, `OPENAI_MODEL` | AI analysis provider configuration |
+| `AI_SETTINGS_ENCRYPTION_SECRET` | Optional stable secret for personal API key encryption; defaults to `DJANGO_SECRET_KEY` |
 | `ACCESS_AUDIT_PHONE_NUMBER` | Opt-in access auditing for one account |
 | `GEOIP_CITY_DB_PATH` | Optional local GeoIP database |
 
-Without AI credentials, AI analysis is unavailable; the interface does not fabricate clinical results.
+Users can open **Settings → AI settings** and enter their own `OPENAI_API_KEY`. They can replace or remove it from the same page. The key is encrypted in the database for that account; the frontend receives only its last four characters and does not keep it in browser storage. Saving checks the key's format; OpenAI validates it when an analysis is requested. API requests run on the backend, following the [official OpenAI authentication guidance](https://developers.openai.com/api/reference/overview#authentication).
+
+The requesting user's saved key takes precedence over the server's `OPENAI_API_KEY`. Removing it restores the server fallback, if configured. A patient's key is never used for another user's request. Keep the encryption secret stable across restarts; changing it requires users to re-enter their saved keys. Personal keys are separate from patient records and are not included in account or case API responses.
+
+Without either a personal or server key, AI analysis is unavailable; the interface links to Settings and does not fabricate clinical results.
 
 ## Validation
 
@@ -131,6 +144,6 @@ deploy/                  Existing Nginx deployment template
 
 ## Production deployment
 
-The existing [deployment guide](docs/DEPLOYMENT.md), `docker-compose.production.yml`, and `deploy/nginx-knee.conf` describe a specific server installation. Adapt its hostname, network, storage, and environment settings for your infrastructure. The production Compose template includes an explicit mock OTP test lane; disable it before handling real accounts.
+The existing [deployment guide](docs/DEPLOYMENT.md), `docker-compose.production.yml`, and `deploy/nginx-knee.conf` describe a specific server installation. Adapt its hostname, network, storage, and environment settings for your infrastructure. The production Compose template disables mock OTP.
 
 Before clinical use, configure HTTPS, private medical file storage, backups, consent, retention policies, and account verification. AI output supports clinical review and requires clinical validation; it does not replace a qualified physician's diagnosis. Verify the WOMAC instrument's translation, validation, and licensing before clinical or insurance use.

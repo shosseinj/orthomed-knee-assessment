@@ -8,6 +8,7 @@ from rest_framework_simplejwt.tokens import RefreshToken
 from .models import User
 from .services import issue_otp, verify_otp
 from .validators import normalize_national_code, validate_birth_date
+from .permissions import can_manage_accounts
 
 
 def normalize_phone(value: str) -> str:
@@ -34,9 +35,13 @@ class PatientIdentitySerializer(UserSerializer):
 
 class AccountSelfSerializer(PatientIdentitySerializer):
     audit_access = serializers.SerializerMethodField()
+    can_manage_accounts = serializers.SerializerMethodField()
 
     class Meta(PatientIdentitySerializer.Meta):
-        fields = PatientIdentitySerializer.Meta.fields + ("audit_access",)
+        fields = PatientIdentitySerializer.Meta.fields + ("audit_access", "can_manage_accounts")
+
+    def get_can_manage_accounts(self, obj):
+        return can_manage_accounts(obj)
 
     def get_audit_access(self, obj):
         return bool(settings.ACCESS_AUDIT_PHONE_NUMBER and obj.phone_number == settings.ACCESS_AUDIT_PHONE_NUMBER)
@@ -69,8 +74,38 @@ class OTPRequestSerializer(serializers.Serializer):
 
 
 class PanelAccessSerializer(serializers.Serializer):
-    path = serializers.RegexField(r"^/(?:dashboard|profile|cases/(?:new|[0-9a-fA-F-]{36}))/?$", max_length=80)
+    path = serializers.RegexField(r"^/(?:dashboard|profile|settings|management|cases/(?:new|[0-9a-fA-F-]{36}))/?$", max_length=80)
     client_timezone = serializers.CharField(max_length=64, required=False, allow_blank=True)
+
+
+class AISettingsSerializer(serializers.Serializer):
+    openai_api_key = serializers.CharField(write_only=True, min_length=20, max_length=512, trim_whitespace=True)
+
+    def validate_openai_api_key(self, value):
+        if not value.startswith("sk-") or not value.isascii() or any(char.isspace() for char in value):
+            raise serializers.ValidationError("کلید OpenAI معتبر نیست؛ کلید باید با sk- شروع شود و فاصله نداشته باشد.")
+        return value
+
+
+class ManagedAccountSerializer(PatientIdentitySerializer):
+    class Meta(PatientIdentitySerializer.Meta):
+        fields = PatientIdentitySerializer.Meta.fields + ("is_active", "date_joined")
+        read_only_fields = fields
+
+
+class AccountReviewSerializer(serializers.Serializer):
+    is_verified = serializers.BooleanField()
+
+    def validate(self, attrs):
+        if set(self.initial_data) - {"is_verified"}:
+            raise serializers.ValidationError("فقط وضعیت تأیید حساب از این بخش قابل تغییر است.")
+        return attrs
+
+
+class AccountListQuerySerializer(serializers.Serializer):
+    q = serializers.CharField(max_length=120, required=False, allow_blank=True)
+    role = serializers.ChoiceField(choices=("doctor", "insurance", ""), required=False)
+    status = serializers.ChoiceField(choices=("pending", "verified", "inactive", "all"), required=False)
 
 
 class OTPVerifySerializer(serializers.Serializer):

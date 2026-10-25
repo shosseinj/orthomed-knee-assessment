@@ -7,6 +7,8 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { LoginPage } from "./pages/LoginPage";
 import { NewCasePage } from "./pages/NewCasePage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { SettingsPage } from "./pages/SettingsPage";
+import { AccountManagementPage } from "./pages/AccountManagementPage";
 
 export function App() {
   useLocale();
@@ -17,6 +19,8 @@ export function App() {
         <Route path="/dashboard" element={<DashboardPage />} />
         <Route path="/cases/new" element={<NewCasePage />} />
         <Route path="/profile" element={<ProfilePage />} />
+        <Route path="/settings" element={<SettingsPage />} />
+        <Route path="/management" element={<AccountManagementPage />} />
         <Route path="/cases/:id" element={<CaseDetailPage />} />
       </Route>
     </Route>

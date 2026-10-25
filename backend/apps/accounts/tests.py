@@ -16,13 +16,13 @@ from .services import issue_otp
 from .validators import normalize_national_code
 
 
-@override_settings(DEBUG=True, OTP_BACKEND="console", ENABLE_MOCK_OTP=True, MOCK_OTP_PREFIX="0950", MOCK_OTP_CODE="12345")
+@override_settings(DEBUG=True, OTP_BACKEND="console", ENABLE_MOCK_OTP=True, MOCK_OTP_PREFIX="0950", MOCK_OTP_CODE="11111")
 class OTPFlowTests(TestCase):
     def test_development_otp_creates_patient_and_tokens(self):
         issue_otp("09501234567")
         serializer = OTPVerifySerializer(data={
             "phone_number": "09501234567",
-            "code": "12345",
+            "code": "11111",
             "first_name": "سارا",
             "last_name": "محمدی",
             "national_code": "۰۰۱۳۵۲۰۸۲۲",
@@ -39,7 +39,7 @@ class OTPFlowTests(TestCase):
     def test_insurance_registration_requires_admin_approval(self):
         issue_otp("09501234568")
         serializer = OTPVerifySerializer(data={
-            "phone_number": "09501234568", "code": "12345", "role": "insurance",
+            "phone_number": "09501234568", "code": "11111", "role": "insurance",
             "first_name": "مینا", "last_name": "احمدی", "organization_name": "بیمه نمونه",
             "national_code": "0084575948", "birth_date": "1985-06-12",
         })
@@ -50,27 +50,29 @@ class OTPFlowTests(TestCase):
         self.assertFalse(user.is_verified)
         self.assertEqual(user.organization_name, "بیمه نمونه")
 
-    def test_fixed_mock_code_is_rejected_for_regular_numbers(self):
-        issue_otp("09121234569")
-        serializer = OTPVerifySerializer(data={"phone_number": "09121234569", "code": "12345"})
-        self.assertFalse(serializer.is_valid())
+    def test_development_code_works_for_regular_mobile_numbers(self):
+        user = User.objects.create_user("09121234569", role=User.Role.PATIENT)
+        issue_otp(user.phone_number)
+        serializer = OTPVerifySerializer(data={"phone_number": user.phone_number, "code": "11111"})
+        self.assertTrue(serializer.is_valid(), serializer.errors)
 
     @patch("apps.accounts.services.get_sms_gateway")
     def test_mock_prefix_never_calls_sms_gateway(self, get_gateway):
         issue_otp("09509999999")
         get_gateway.assert_not_called()
 
-    @override_settings(DEBUG=False, ENABLE_MOCK_OTP=True)
+    @override_settings(DEBUG=False, ENABLE_MOCK_OTP=True, OTP_BACKEND="smsir")
+    @patch("apps.accounts.services.secrets.randbelow", return_value=44321)
     @patch("apps.accounts.services.get_sms_gateway")
-    def test_mock_prefix_also_bypasses_sms_in_production_mode(self, get_gateway):
+    def test_production_uses_provider_and_rejects_development_code(self, get_gateway, _random):
+        from .services import verify_otp
         issue_otp("09508888888")
-        get_gateway.assert_not_called()
-        serializer = OTPVerifySerializer(data={
-            "phone_number": "09508888888", "code": "12345",
-            "first_name": "کاربر", "last_name": "آزمایشی",
-            "national_code": "1234567891", "birth_date": "1994-08-22",
-        })
-        self.assertTrue(serializer.is_valid(), serializer.errors)
+        get_gateway.return_value.send_otp.assert_called_once_with("09508888888", "54321")
+        self.assertFalse(verify_otp("09508888888", "11111"))
+        self.assertTrue(verify_otp("09508888888", "54321"))
+        response = APIClient().post("/api/v1/auth/phone/check/", {"phone_number": "09508888888"}, format="json")
+        self.assertFalse(response.data["is_mock"])
+        self.assertNotIn("development_code", response.data)
 
     def test_phone_check_routes_existing_and_new_users(self):
         User.objects.create_user("09501111111", role=User.Role.PATIENT)
@@ -84,7 +86,7 @@ class OTPFlowTests(TestCase):
     def test_registration_requires_valid_unique_national_code_and_birth_date(self):
         issue_otp("09503333333")
         payload = {
-            "phone_number": "09503333333", "code": "12345",
+            "phone_number": "09503333333", "code": "11111",
             "first_name": "علی", "last_name": "رضایی",
         }
         missing = OTPVerifySerializer(data=payload)
@@ -290,3 +292,43 @@ class AccessAuditTests(TestCase):
             {event["kind"] for event in self.read_events()},
             {AccessEventKind.ADMIN_LOGIN, AccessEventKind.ADMIN_VIEW},
         )
+
+@override_settings(DEBUG=True, OTP_BACKEND="console", ENABLE_MOCK_OTP=True, MOCK_OTP_CODE="11111")
+class DevelopmentOTPTests(TestCase):
+    @patch("apps.accounts.services.get_sms_gateway")
+    def test_request_returns_development_hint_for_any_valid_mobile_without_sms(self, get_gateway):
+        for phone in ("09123456789", "09501234567"):
+            response = APIClient().post("/api/v1/auth/otp/request/", {"phone_number": phone}, format="json")
+            self.assertEqual(response.status_code, 202)
+            self.assertTrue(response.data["is_mock"])
+            self.assertEqual(response.data["development_code"], "11111")
+        get_gateway.assert_not_called()
+
+    def test_development_code_requires_challenge_and_remains_one_time(self):
+        from .services import verify_otp
+        phone = "09123456789"
+        self.assertFalse(verify_otp(phone, "11111"))
+        issue_otp(phone)
+        self.assertFalse(verify_otp(phone, "12345"))
+        self.assertTrue(verify_otp(phone, "11111"))
+        self.assertFalse(verify_otp(phone, "11111"))
+
+    def test_expired_development_challenge_is_rejected(self):
+        from .services import verify_otp
+        phone = "09123456789"
+        challenge = issue_otp(phone)
+        challenge.expires_at = timezone.now() - timedelta(seconds=1)
+        challenge.save()
+        self.assertFalse(verify_otp(phone, "11111"))
+
+    @override_settings(ENABLE_MOCK_OTP=False)
+    @patch("apps.accounts.services.secrets.randbelow", return_value=44321)
+    @patch("apps.accounts.services.get_sms_gateway")
+    def test_disabling_mock_mode_restores_real_codes(self, get_gateway, _random):
+        from .services import verify_otp
+        phone = "09123456789"
+        response = APIClient().post("/api/v1/auth/otp/request/", {"phone_number": phone}, format="json")
+        self.assertFalse(response.data["is_mock"])
+        self.assertNotIn("development_code", response.data)
+        get_gateway.return_value.send_otp.assert_called_once_with(phone, "54321")
+        self.assertFalse(verify_otp(phone, "11111"))
