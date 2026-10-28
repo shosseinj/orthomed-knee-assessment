@@ -35,6 +35,13 @@ class MedicalCase(models.Model):
     def submit(self):
         if not self.images.filter(purpose="xray").exists() or not hasattr(self, "questionnaire") or not hasattr(self, "womac"):
             raise ValueError("برای ثبت پرونده، شرح حال، پرسش‌نامه WOMAC و تصویر الزامی است.")
+        if self.images.filter(purpose="xray", organized=True, confirmed_at__isnull=True).exists():
+            raise ValueError("سمت و نمای تصاویر جدید را پیش از ارسال تأیید کنید.")
+        # Invalidate in-flight draft classification before locking the case.
+        # Its eventual response must not change the submitted record.
+        processing = self.images.filter(classification_status="processing")
+        processing.filter(confirmed_at__isnull=False).update(classification_token=None, classification_status="completed")
+        processing.filter(confirmed_at__isnull=True).update(classification_token=None, classification_status="pending")
         self.status = self.Status.SUBMITTED
         self.submitted_at = timezone.now()
         self.save(update_fields=["status", "submitted_at", "updated_at"])
@@ -136,6 +143,26 @@ def xray_upload_path(instance, filename):
 
 
 class XRayImage(models.Model):
+    class Side(models.TextChoices):
+        RIGHT = "right", "راست"
+        LEFT = "left", "چپ"
+        BILATERAL = "bilateral", "هر دو زانو"
+        UNKNOWN = "unknown", "نامشخص"
+
+    class DetectedView(models.TextChoices):
+        FRONTAL = "frontal", "رخ"
+        LATERAL = "lateral", "نیم‌رخ"
+        SKYLINE = "skyline", "کشکک"
+        OTHER = "other", "سایر"
+        UNKNOWN = "unknown", "نامشخص"
+
+    class ClassificationStatus(models.TextChoices):
+        PENDING = "pending", "در انتظار طبقه‌بندی"
+        PROCESSING = "processing", "در حال طبقه‌بندی"
+        COMPLETED = "completed", "طبقه‌بندی‌شده"
+        FAILED = "failed", "طبقه‌بندی ناموفق"
+        NEEDS_CONFIRMATION = "needs_confirmation", "نیازمند تأیید"
+
     class View(models.TextChoices):
         AP = "ap", "رخ (AP)"
         LATERAL = "lateral", "نیم‌رخ"
@@ -148,6 +175,50 @@ class XRayImage(models.Model):
     view = models.CharField(max_length=16, choices=View.choices, default=View.OTHER)
     purpose = models.CharField(max_length=8, default="xray", choices=(("xray", "رادیولوژی"), ("lab", "آزمایش")))
     uploaded_at = models.DateTimeField(auto_now_add=True)
+    # `view` retains its original meaning, including historical AP declarations.
+    # New frontal declarations never assert AP versus PA.
+    organized = models.BooleanField(default=False)
+    declared_side = models.CharField(max_length=16, choices=Side.choices, default=Side.UNKNOWN)
+    declared_view = models.CharField(max_length=16, choices=DetectedView.choices, default=DetectedView.UNKNOWN)
+    detected_side = models.CharField(max_length=16, choices=Side.choices, default=Side.UNKNOWN)
+    detected_view = models.CharField(max_length=16, choices=DetectedView.choices, default=DetectedView.UNKNOWN)
+    confirmed_side = models.CharField(max_length=16, choices=Side.choices, null=True, blank=True)
+    confirmed_view = models.CharField(max_length=16, choices=DetectedView.choices, null=True, blank=True)
+    # Only four unilateral slots are reserved. Bilateral/unknown/legacy images
+    # have no reservation and remain available in the explicit review gallery.
+    slot_key = models.CharField(max_length=24, null=True, blank=True, editable=False)
+    classification_status = models.CharField(max_length=24, choices=ClassificationStatus.choices, default=ClassificationStatus.PENDING)
+    is_knee_xray = models.BooleanField(null=True, blank=True)
+    quality_status = models.CharField(max_length=16, choices=(("adequate", "کافی"), ("limited", "محدود"), ("unusable", "غیرقابل استفاده"), ("unknown", "نامشخص")), default="unknown")
+    classification_reason = models.TextField(blank=True)
+    visible_marker = models.CharField(max_length=16, default="unknown")
+    ambiguous_evidence = models.BooleanField(default=False)
+    original_ai_result = models.JSONField(default=dict, blank=True)
+    classification_error = models.CharField(max_length=48, blank=True)
+    classification_model = models.CharField(max_length=100, blank=True)
+    classification_version = models.CharField(max_length=100, blank=True)
+    classification_token = models.UUIDField(null=True, editable=False)
+    classification_started_at = models.DateTimeField(null=True, blank=True)
+    classified_at = models.DateTimeField(null=True, blank=True)
+    confirmation_source = models.CharField(max_length=16, blank=True)
+    confirmation_reason = models.CharField(max_length=500, blank=True)
+    confirmed_by = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="confirmed_xrays")
+    confirmed_at = models.DateTimeField(null=True, blank=True)
+
+    @property
+    def effective_side(self):
+        return self.confirmed_side if self.confirmed_at else self.declared_side
+
+    @property
+    def effective_view(self):
+        return self.confirmed_view if self.confirmed_at else self.declared_view
+
+    class Meta:
+        ordering = ("uploaded_at", "id")
+        constraints = [
+            models.UniqueConstraint(fields=("case", "slot_key"), name="one_xray_per_knee_slot"),
+            models.CheckConstraint(condition=models.Q(slot_key__isnull=True) | models.Q(purpose="xray", slot_key__in=("right_frontal", "right_lateral", "left_frontal", "left_lateral")), name="valid_knee_slot"),
+        ]
 
 
 class Assessment(models.Model):

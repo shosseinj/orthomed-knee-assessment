@@ -166,11 +166,20 @@ class WOMACSerializer(serializers.ModelSerializer):
 
 class XRayImageSerializer(serializers.ModelSerializer):
     image_url = serializers.SerializerMethodField()
+    effective_side = serializers.CharField(read_only=True)
+    effective_view = serializers.CharField(read_only=True)
+    replace_image_id = serializers.UUIDField(write_only=True, required=False)
 
     class Meta:
         model = XRayImage
-        fields = ("id", "image", "image_url", "view", "purpose", "uploaded_at")
+        fields = ("id", "image", "image_url", "view", "purpose", "uploaded_at", "organized", "declared_side", "declared_view", "detected_side", "detected_view", "confirmed_side", "confirmed_view", "effective_side", "effective_view", "slot_key", "classification_status", "is_knee_xray", "quality_status", "classification_reason", "visible_marker", "ambiguous_evidence", "original_ai_result", "classification_error", "classification_model", "classification_version", "classification_started_at", "classified_at", "confirmation_source", "confirmation_reason", "confirmed_by", "confirmed_at", "replace_image_id")
+        read_only_fields = tuple(field for field in fields if field not in ("image", "view", "purpose", "declared_side", "declared_view", "replace_image_id"))
         extra_kwargs = {"image": {"write_only": True}}
+
+    def validate(self, attrs):
+        if attrs.get("purpose", "xray") == "lab" and ("declared_side" in attrs or "declared_view" in attrs):
+            raise serializers.ValidationError("تصاویر آزمایش جایگاه زانو ندارند.")
+        return attrs
 
     def get_image_url(self, obj):
         request = self.context.get("request")
@@ -184,6 +193,17 @@ class XRayImageSerializer(serializers.ModelSerializer):
         if image.size > settings.MAX_UPLOAD_SIZE:
             raise serializers.ValidationError("حجم هر تصویر نباید بیشتر از ۱۲ مگابایت باشد.")
         return image
+
+
+class ImageConfirmationSerializer(serializers.Serializer):
+    side = serializers.ChoiceField(choices=XRayImage.Side.choices)
+    view = serializers.ChoiceField(choices=XRayImage.DetectedView.choices)
+    reason = serializers.CharField(max_length=500, required=False, allow_blank=True)
+
+    def validate(self, attrs):
+        if (attrs["side"] == "unknown" or attrs["view"] == "unknown") and not attrs.get("reason", "").strip():
+            raise serializers.ValidationError({"reason": "برای تأیید سمت یا نمای نامشخص دلیل بنویسید."})
+        return attrs
 
 
 class AssessmentSerializer(serializers.ModelSerializer):

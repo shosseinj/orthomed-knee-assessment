@@ -86,12 +86,39 @@ export interface WOMACResponse {
   completed_at: string;
 }
 
+export type KneeSide = "right" | "left" | "bilateral" | "unknown";
+export type KneeView = "frontal" | "lateral" | "skyline" | "other" | "unknown";
 export interface XRayImage {
   id: string;
   image_url: string;
   purpose?: "xray" | "lab";
   view: string;
   uploaded_at: string;
+  organized?: boolean;
+  declared_side?: KneeSide;
+  declared_view?: KneeView;
+  detected_side?: KneeSide;
+  detected_view?: KneeView;
+  confirmed_side?: KneeSide | null;
+  confirmed_view?: KneeView | null;
+  effective_side?: KneeSide;
+  effective_view?: KneeView;
+  slot_key?: string | null;
+  classification_status?: "pending" | "processing" | "completed" | "failed" | "needs_confirmation";
+  is_knee_xray?: boolean | null;
+  quality_status?: "adequate" | "limited" | "unusable" | "unknown";
+  classification_reason?: string;
+  visible_marker?: string;
+  ambiguous_evidence?: boolean;
+  classification_error?: string;
+  classification_model?: string;
+  classification_version?: string;
+  classified_at?: string | null;
+  confirmation_source?: string;
+  confirmation_reason?: string;
+  confirmed_by?: string | null;
+  confirmed_at?: string | null;
+  original_ai_result?: Record<string, unknown>;
 }
 
 export interface Assessment extends DoctorExamination {

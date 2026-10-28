@@ -52,6 +52,23 @@ export async function api<T>(path: string, options: ApiOptions = {}): Promise<T>
   return body as T;
 }
 
+function uploadCaseImage(id: string, data: FormData, onProgress?: (percent: number) => void): Promise<import("../types").XRayImage> {
+  if (!onProgress) return api(`/cases/${id}/images/`, { method: "POST", body: data });
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", `${API_URL}/cases/${id}/images/`);
+    request.setRequestHeader("Accept-Language", locale());
+    const token = localStorage.getItem("orthomed_access");
+    if (token) request.setRequestHeader("Authorization", `Bearer ${token}`);
+    request.responseType = "json";
+    request.timeout = 120000;
+    request.upload.onprogress = (event) => { if (event.lengthComputable) onProgress(Math.round(event.loaded / event.total * 100)); };
+    request.onload = () => request.status >= 200 && request.status < 300 ? resolve(request.response) : reject(new ApiError(request.status, request.response));
+    request.onerror = request.ontimeout = () => reject(new Error("Upload failed"));
+    request.send(data);
+  });
+}
+
 type LoginResult = { access: string; refresh: string; user: import("../types").User };
 type OTPVerificationResult = ({ registration_required: false } & LoginResult) | { registration_required: true; registration_token: string };
 
@@ -82,7 +99,9 @@ export const casesApi = {
   deleteCase: (id: string) => api<void>(`/cases/${id}/`, { method: "DELETE" }),
   saveQuestionnaire: (id: string, data: import("../types").Questionnaire) => api(`/cases/${id}/questionnaire/`, { method: "PUT", body: JSON.stringify(data) }),
   saveWomac: (id: string, responses: Record<string, number>, supplemental_responses: Record<string, number>) => api(`/cases/${id}/womac/`, { method: "PUT", body: JSON.stringify({ responses, supplemental_responses }) }),
-  uploadImage: (id: string, data: FormData) => api(`/cases/${id}/images/`, { method: "POST", body: data }),
+  uploadImage: uploadCaseImage,
+  classifyImage: (id: string) => api<import("../types").XRayImage>(`/images/${id}/classify/`, { method: "POST", body: JSON.stringify({}) }),
+  confirmImage: (id: string, side: import("../types").KneeSide, view: import("../types").KneeView, reason: string) => api<import("../types").XRayImage>(`/images/${id}/confirm/`, { method: "POST", body: JSON.stringify({ side, view, reason }) }),
   deleteImage: (id: string) => api<void>(`/images/${id}/`, { method: "DELETE" }),
   requestAiAssessment: (id: string) => api<import("../types").Assessment>(`/cases/${id}/ai-assessment/`, { method: "POST", body: JSON.stringify({}) }),
   submit: (id: string) => api(`/cases/${id}/submit/`, { method: "POST", body: JSON.stringify({}) }),

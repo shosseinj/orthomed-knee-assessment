@@ -105,7 +105,8 @@ class PrevisitTests(TestCase):
         self.assertEqual(self.client.delete(url).status_code, 403)
         self.assertTrue(path.exists())
         self.client.force_authenticate(self.patient)
-        self.assertEqual(self.client.delete(url).status_code, 204)
+        with self.captureOnCommitCallbacks(execute=True):
+            self.assertEqual(self.client.delete(url).status_code, 204)
         self.assertFalse(path.exists())
         self.assertFalse(XRayImage.objects.filter(pk=image.pk).exists())
         image = self.add_image()

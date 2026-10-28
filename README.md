@@ -8,6 +8,7 @@ A bilingual **English and Persian** platform for knee surgery assessment, connec
 
 - **English and Persian:** switch languages from the sign-in screen or application header. Your preference is saved in your browser; layouts switch between left-to-right and right-to-left.
 - **Patient workspace:** register with a mobile verification code, manage your profile, record medical history, complete the 24-item WOMAC questionnaire, upload knee X-rays, and track cases.
+- **Organized knee images:** optional right/left frontal and lateral slots, independent per-image AI classification, explicit human confirmation, replacement, and bilingual captions.
 - **Doctor workspace:** manage patients, review clinical and radiographic findings, record a Kellgren–Lawrence grade, and submit a medical assessment.
 - **Insurance workspace:** review medical and AI assessments and record a surgical coverage decision.
 - **Localized dates and catalogs:** Gregorian birth-date input in English, a Persian calendar in Persian, locale-aware date and number formatting, and searchable English/Persian medical catalogs.
@@ -59,7 +60,16 @@ The frontend proxies `/api` and `/media` to the backend, so browsers on other de
 ./run.sh
 ```
 
-The runner works from any directory, creates `.env` from `.env.example` when missing, installs dependencies on first launch or when the dependency files change, applies database migrations, and starts both servers on `0.0.0.0:5173` and `0.0.0.0:8000`. If your Node.js version is too old, it downloads and uses Node.js 22 through `npx`. Python 3.12 or newer and npm are required. Press **Ctrl+C** to stop both servers. Restart the runner after changing `.env` or backend code. When either port is occupied, the runner uses `lsof` to find and stop its listener, waits up to five seconds, and force-stops it if necessary before restarting the project. Processes owned by another user still require that user's permission to stop.
+The runner works from any directory, creates `.env` from `.env.example` when missing, installs dependencies on first launch or when the dependency files change, applies database migrations, and starts both servers in the background on `0.0.0.0:5173` and `0.0.0.0:8000`. It returns control to your terminal after both servers are listening, and the project keeps running when you close the terminal. If your Node.js version is too old, it downloads and uses Node.js 22 through `npx`. Python 3.12 or newer and npm are required. When either port is occupied, the runner uses `lsof` to find and stop its listener, waits up to five seconds, and force-stops it if necessary before restarting the project. Processes owned by another user still require that user's permission to stop.
+
+Run `./run.sh` again to restart after changing `.env` or backend code. To stop both servers or follow their logs:
+
+```bash
+./run.sh --stop
+tail -f .run/backend.log .run/frontend.log
+```
+
+Logs are replaced on each launch and excluded from Git. If startup fails or takes longer than 30 seconds, the runner stops both new processes and reports the log directory.
 
 ### SMS.ir sign-in codes
 
@@ -139,6 +149,18 @@ The requesting user's saved key takes precedence over the server's `OPENAI_API_K
 
 Without either a personal or server key, AI analysis is unavailable; the interface links to Settings and does not fabricate clinical results.
 
+## Knee image organization and classification
+
+Draft cases offer four optional slots: right frontal, right lateral, left frontal, and left lateral. Unilateral cases need only their relevant images; the existing minimum of one knee X-ray remains. Bilateral, unknown, other-view, and legacy images stay in a separate review area. Laboratory attachments retain their existing upload flow. “Frontal” does not assert AP versus PA; the historical `view` field is preserved.
+
+Each new X-ray stores its declared side/view separately from independent AI detection and human confirmation. Every new image requires explicit confirmation before submission, even when AI agrees. An unknown side/view can be acknowledged with a reason for further review. Confirmation records the user, source, timestamp, and note; it never rewrites the declaration or original AI result. Submission locks image changes. Migration `0009` leaves existing files and historical views intact and initializes new metadata as unknown/pending without requiring retrospective confirmation.
+
+The frontend uploads with progress, then calls authenticated `POST /api/v1/images/{image_id}/classify/`. `POST /api/v1/images/{image_id}/confirm/` accepts `{ "side": "right", "view": "frontal", "reason": "" }`. Supported sides are `right`, `left`, `bilateral`, `unknown`; views are `frontal`, `lateral`, `skyline`, `other`, `unknown`. The upload endpoint accepts `declared_side`, `declared_view`, and optional `replace_image_id`; replacement creates a new image ID and clears prior detection/confirmation. A unique database reservation and serialized case writes reject occupied slots, stale replacement targets, and concurrent duplicate assignments. Bilateral/unassigned images have no unilateral reservation.
+
+Classification uses the requesting user's existing personal-key/server-key selection and `OPENAI_API_URL`/`OPENAI_MODEL`. Only stable IDs and image bytes enter its vision request; declarations, filenames, questionnaire answers, and upload order do not establish laterality. The backend validates result IDs, missing/duplicate results, types, enums, and contradictory marker/quality evidence. It preserves visible markers, reasons, quality, model/version, and timestamps. Request tokens discard late results after replacement, confirmation, newer retries, or submission. Failures retain the file and allow manual confirmation/retry. The clinical assessment receives each image with its stable ID and source-labelled metadata while retaining its existing response contract, grading, and recommendations.
+
+This is a working provider integration, **not a clinically validated classifier**. Automated tests mock AI and demonstrate application behavior, not clinical detection accuracy. Classification is synchronous (up to a 120-second provider timeout); production workloads should use a task queue. The configured provider/model must support vision and the structured JSON schema. The interface presents uncertainty without a model-confidence accuracy claim.
+
 ## Validation
 
 ```bash
@@ -152,6 +174,8 @@ npm run build
 # Browser regression tests (install Chromium once)
 npx playwright install chromium
 npm run test:e2e
+# Alternatively, use an installed Chromium:
+PLAYWRIGHT_CHROMIUM_EXECUTABLE_PATH=/path/to/chromium npm run test:e2e
 ```
 
 ## Repository structure

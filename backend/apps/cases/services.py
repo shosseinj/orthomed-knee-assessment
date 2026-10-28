@@ -70,6 +70,7 @@ requires_further_examination را مشخص کنید و در rationale صریحا
         }
 
     def assess(self, case):
+        from .image_classification import image_metadata
         questionnaire = case.questionnaire
         womac_questions = {
             item_id: {"question": label, "answer_0_to_4": case.womac.responses.get(item_id)}
@@ -126,13 +127,13 @@ requires_further_examination را مشخص کنید و در rationale صریحا
             "text": "داده بالینی بیمار:\n" + json.dumps(clinical_context, ensure_ascii=False),
         }]
         for image in case.images.all():
-            content.append({"type": "text", "text": "تصویر آزمایش (رادیوگرافی نیست)" if image.purpose == "lab" else "رادیوگرافی زانو"})
+            content.append({"type": "text", "text": json.dumps(image_metadata(image), ensure_ascii=False)})
             content.append(self._image_content(image))
         payload = {
             "model": settings.OPENAI_MODEL,
             "store": False,
             "messages": [
-                {"role": "system", "content": self.system_prompt},
+                {"role": "system", "content": self.system_prompt + "\nEach image is preceded by its stable image_id and source-labelled metadata. Human confirmation and user declarations are not independent AI evidence. Attribute image findings by image_id and knee. Never combine findings from different knees into an unsupported side-specific conclusion. Bilateral/unknown images cannot establish a unilateral finding without visible evidence. Laboratory images are not radiographs. Preserve the existing case-level response schema; explain side attribution and limitations in the rationale."},
                 {"role": "user", "content": content},
             ],
             "response_format": {"type": "json_schema", "json_schema": self.response_schema},

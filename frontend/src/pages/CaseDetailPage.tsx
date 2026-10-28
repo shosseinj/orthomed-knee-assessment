@@ -1,10 +1,12 @@
+import { AuthenticatedImage, AuthenticatedImageLink } from "../components/PrivateImage";
+import { KneeImageManager, ImageCaption } from "../components/KneeImageManager";
 import { Field, ValidatedForm, useClearFieldError } from "../components/ValidatedForm";
 import { formatDate } from "../utils/dates";
 import { t, locale, useLocale, catalogLabel } from "../i18n";
 import { Activity, AlertCircle, ArrowRight, BrainCircuit, Check, CheckCircle2, ChevronLeft, ChevronRight, FileImage, ImagePlus, LoaderCircle, LockKeyhole, Save, Send, ShieldCheck, Sparkles, Stethoscope, Trash2, UserRound } from "lucide-react";
 import { FormEvent, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { apiErrorMessage, apiFieldErrors, apiFileUrl, casesApi } from "../api/client";
+import { apiErrorMessage, apiFieldErrors, casesApi } from "../api/client";
 import { QuestionnaireForm } from "../components/PrevisitForm";
 import { DoctorForm } from "../components/DoctorForm";
 import { PrevisitSummary, PrevisitScoreCard, DoctorExaminationSummary } from "../components/PrevisitSummary";
@@ -17,45 +19,6 @@ import { ageFromBirthDate } from "../utils/dates";
 
 const emptyQuestionnaire: Questionnaire = { age_years: null, gender: "", underlying_conditions: [], medications: [], height_cm: null, weight_kg: null, pain_level: 5, pain_duration_months: 0, mobility_limit: "moderate", previous_treatments: [], conservative_treatment_rounds: 0, conservative_duration_months: 0, conservative_response: "not_tried", had_intra_articular_injection: false, injection_rounds: 0, injection_types: [], daily_life_impact: "none", smoking_status: "never", diabetes_status: "none", has_night_pain: false, uses_walking_aid: false, additional_notes: "" };
 type IntakeStep = 1 | 2 | 3;
-
-function useAuthenticatedImage(source: string) {
-  const [objectUrl, setObjectUrl] = useState("");
-  useEffect(() => {
-    const controller = new AbortController();
-    let currentObjectUrl = "";
-    setObjectUrl("");
-    const token = localStorage.getItem("orthomed_access");
-    void fetch(apiFileUrl(source), {
-      headers: token ? { Authorization: `Bearer ${token}` } : {},
-      signal: controller.signal,
-    }).then((response) => {
-      if (!response.ok) throw new Error("Image request failed");
-      return response.blob();
-    }).then((blob) => {
-      currentObjectUrl = URL.createObjectURL(blob);
-      setObjectUrl(currentObjectUrl);
-    }).catch((error: unknown) => {
-      if (!(error instanceof DOMException && error.name === "AbortError")) setObjectUrl("");
-    });
-    return () => {
-      controller.abort();
-      if (currentObjectUrl) URL.revokeObjectURL(currentObjectUrl);
-    };
-  }, [source]);
-  return objectUrl;
-}
-
-function AuthenticatedImage({ source, alt }: { source: string; alt: string }) {
-  useLocale();
-  const objectUrl = useAuthenticatedImage(source);
-  return <img src={objectUrl || undefined} alt={alt} />;
-}
-
-function AuthenticatedImageLink({ source, label = "X-ray زانو" }: { source: string; label?: string }) {
-  useLocale();
-  const objectUrl = useAuthenticatedImage(source);
-  return <a href={objectUrl || undefined} target="_blank" rel="noreferrer"><img src={objectUrl || undefined} alt={t(label)} /><span>{t("مشاهده تصویر اصلی")}</span></a>;
-}
 
 export function CaseDetailPage() {
   useLocale();
@@ -129,7 +92,7 @@ export function CaseDetailPage() {
     if (!id) return;
     setBusy(true); setError(""); setMessage("");
     try { await casesApi.submit(id); setShowSubmitModal(false); setMessage(t("پرونده برای بررسی ارسال شد.")); load(); }
-    catch { setError(t("برای ثبت نهایی، تکمیل شرح حال، WOMAC و حداقل یک تصویر الزامی است.")); }
+    catch (e) { setError(apiErrorMessage(e, "برای ثبت نهایی، تکمیل شرح حال، WOMAC و حداقل یک تصویر الزامی است.")); }
     finally { setBusy(false); }
   }
 
@@ -165,7 +128,7 @@ export function CaseDetailPage() {
       <div className="wizard-stage" key={activeStep}>
         {activeStep === 1 && <QuestionnaireForm fieldErrors={questionnaireErrors} value={questionnaire} onChange={setQuestionnaire} onSave={() => void saveQuestionnaire(true)} busy={busy} labAttachments={<UploadPanel purpose="lab" images={labs} onUpload={(file) => upload(file, "lab")} onRemove={removeImage} busy={busy} />} />}
         {activeStep === 2 && <WOMACForm responses={womacResponses} supplemental={supplementalResponses} onChange={setWomacResponses} onSupplementalChange={setSupplementalResponses} onSave={() => void saveWomac(true)} onBack={() => goToStep(1)} busy={busy} />}
-        {activeStep === 3 && <div className="final-step"><UploadPanel images={xrays} onUpload={upload} onRemove={removeImage} busy={busy} /><div className="readiness-card"><span><Sparkles /></span><div><strong>{t("پرونده")} {user?.role === "doctor" ? t("بیمار") : t("شما")}  {t("تقریباً آماده است")}</strong><p>{t("شرح حال، امتیاز WOMAC و تصاویر برای بررسی پزشکی و سامانه تحلیل هوشمند ارسال می‌شوند.")}</p></div><div className="readiness-list"><span className={item.questionnaire ? "ready" : ""}><Check />  {t("شرح حال")}</span><span className={item.womac ? "ready" : ""}><Check /> WOMAC</span><span className={xrays.length ? "ready" : ""}><Check />  {t("تصویر زانو")}</span></div></div><div className="submit-panel"><span><ShieldCheck /></span><div><h3>{t("ثبت نهایی پرونده")}</h3><p>{t("پس از ثبت نهایی، اطلاعات قفل می‌شوند و برای بررسی ارسال خواهند شد.")}</p></div><button className="button button--ghost" onClick={() => goToStep(2)}><ChevronRight size={18} />  {t("مرحله قبل")}</button><button className="button" disabled={busy || !xrays.length} onClick={() => setShowSubmitModal(true)}><Send size={18} />  {t("ارسال برای بررسی")}</button></div></div>}
+        {activeStep === 3 && <div className="final-step"><KneeImageManager caseId={item.id} images={xrays} onRefresh={() => load(false)} onBusyChange={setBusy} /><div className="readiness-card"><span><Sparkles /></span><div><strong>{t("پرونده")} {user?.role === "doctor" ? t("بیمار") : t("شما")}  {t("تقریباً آماده است")}</strong><p>{t("شرح حال، امتیاز WOMAC و تصاویر برای بررسی پزشکی و سامانه تحلیل هوشمند ارسال می‌شوند.")}</p></div><div className="readiness-list"><span className={item.questionnaire ? "ready" : ""}><Check />  {t("شرح حال")}</span><span className={item.womac ? "ready" : ""}><Check /> WOMAC</span><span className={xrays.length ? "ready" : ""}><Check />  {t("تصویر زانو")}</span></div></div><div className="submit-panel"><span><ShieldCheck /></span><div><h3>{t("ثبت نهایی پرونده")}</h3><p>{t("پس از ثبت نهایی، اطلاعات قفل می‌شوند و برای بررسی ارسال خواهند شد.")}</p></div><button className="button button--ghost" onClick={() => goToStep(2)}><ChevronRight size={18} />  {t("مرحله قبل")}</button><button className="button" disabled={busy || !xrays.length || xrays.some((image) => image.organized && !image.confirmed_at)} onClick={() => setShowSubmitModal(true)}><Send size={18} />  {t("ارسال برای بررسی")}</button></div></div>}
       </div>
       {showSubmitModal && <div className="modal-backdrop" role="presentation" onMouseDown={() => !busy && setShowSubmitModal(false)}><section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="submit-modal-title" onMouseDown={(event) => event.stopPropagation()}><span className="confirm-modal__icon"><ShieldCheck /></span><span className="eyebrow">{t("ثبت نهایی پرونده")}</span><h3 id="submit-modal-title">{t("برای ارسال پرونده آماده‌اید؟")}</h3><p>{t("پس از تأیید، پاسخ‌ها و تصاویر قفل می‌شوند و پرونده هم‌زمان در اختیار پزشکان و سامانه تحلیل هوشمند قرار می‌گیرد.")}</p><div className="confirm-modal__notice"><LockKeyhole size={17} />  {t("بعد از ارسال امکان ویرایش وجود ندارد.")}</div><div className="confirm-modal__actions"><button className="button button--ghost" disabled={busy} onClick={() => setShowSubmitModal(false)}>{t("بازگشت و بررسی")}</button><button className="button" disabled={busy} onClick={submitCase}>{busy ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}  {t("تأیید و ارسال")}</button></div></section></div>}
       {showDeleteModal && <div className="modal-backdrop" role="presentation" onMouseDown={() => !busy && setShowDeleteModal(false)}><section className="confirm-modal confirm-modal--danger" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" onMouseDown={(event) => event.stopPropagation()}><span className="confirm-modal__icon"><Trash2 /></span><span className="eyebrow">{t("حذف پیش‌نویس")}</span><h3 id="delete-modal-title">{t("این پرونده حذف شود؟")}</h3><p>{t("شرح حال، پاسخ‌های WOMAC و تصاویر بارگذاری‌شده این پیش‌نویس برای همیشه حذف می‌شوند.")}</p><div className="confirm-modal__actions"><button className="button button--ghost" disabled={busy} onClick={() => setShowDeleteModal(false)}>{t("انصراف")}</button><button className="button button--danger" disabled={busy} onClick={deleteDraft}>{busy ? <LoaderCircle className="spin" size={18} /> : <Trash2 size={18} />}  {t("حذف پیش‌نویس")}</button></div></section></div>}
@@ -223,7 +186,7 @@ function ReviewView({ item, viewerRole, canDoctorReview, lockedForDoctor, canIns
   return <div className={`review-layout ${viewerRole === "patient" ? "review-layout--patient" : ""}`}>
     <div className="review-main">
       {viewerRole === "patient" && <div className="patient-review-notice"><ShieldCheck /><div><strong>{t("پرونده با موفقیت ارسال شده است")}</strong><p>{t("در این صفحه اطلاعات و پاسخ‌های ثبت‌شده در پرونده را مشاهده می‌کنید. نتایج پزشکی و هوش مصنوعی محرمانه‌اند.")}</p></div></div>}
-      <section className="content-card"><header className="section-title"><span><FileImage /></span><div><h3>{t("تصاویر رادیولوژی")}</h3><p>{item.images?.filter((image) => image.purpose !== "lab").length.toLocaleString(locale())}  {t("تصویر پیوست شده")}</p></div></header><div className="xray-gallery">{item.images?.filter((image) => image.purpose !== "lab").map((image) => <AuthenticatedImageLink source={image.image_url} key={image.id} />)}</div></section>
+      <section className="content-card"><header className="section-title"><span><FileImage /></span><div><h3>{t("تصاویر رادیولوژی")}</h3><p>{item.images?.filter((image) => image.purpose !== "lab").length.toLocaleString(locale())}  {t("تصویر پیوست شده")}</p></div></header><div className="xray-gallery">{item.images?.filter((image) => image.purpose !== "lab").map((image, index) => <figure key={image.id}><AuthenticatedImageLink source={image.image_url} label={t("تصویر رادیولوژی زانو")} /><ImageCaption image={image} index={index} /></figure>)}</div></section>
       {item.images?.some((image) => image.purpose === "lab") && <section className="content-card"><header className="section-title"><h3>{t("تصاویر آزمایش")}</h3></header><div className="xray-gallery">{item.images.filter((image) => image.purpose === "lab").map((image) => <AuthenticatedImageLink source={image.image_url} label="تصویر آزمایش" key={image.id} />)}</div></section>}
       <QuestionnaireSummary value={item.questionnaire} />
       {item.womac ? <WOMACSummary item={item.womac} /> : canDoctorReview && <DoctorWomacForm id={item.id} onSaved={onRefresh} />}

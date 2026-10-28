@@ -4,6 +4,7 @@ import mimetypes
 from django.http import FileResponse
 from django.db import transaction
 from django.db.models import Q
+from django.utils import timezone
 from rest_framework import status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
@@ -17,8 +18,9 @@ from apps.accounts.serializers import normalize_phone
 from .catalogs import SUPPORTED_CATALOGS, search_catalog
 from .models import Assessment, DoctorPatient, InsuranceDecision, MedicalCase, QuestionnaireResponse, WOMACResponse, XRayImage
 from .permissions import CaseAccessPermission
-from .serializers import AssessmentSerializer, DoctorPatientSerializer, InsuranceDecisionSerializer, MedicalCaseDetailSerializer, MedicalCaseListSerializer, QuestionnaireSerializer, WOMACSerializer, XRayImageSerializer
+from .serializers import AssessmentSerializer, DoctorPatientSerializer, ImageConfirmationSerializer, InsuranceDecisionSerializer, MedicalCaseDetailSerializer, MedicalCaseListSerializer, QuestionnaireSerializer, WOMACSerializer, XRayImageSerializer
 from .services import AIProviderError, request_ai_assessment
+from .image_classification import check_slot, classify_image, image_write, slot_key
 
 logger = logging.getLogger(__name__)
 
@@ -71,11 +73,10 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
         is_managing_doctor = self.request.user.role == User.Role.DOCTOR and instance.managing_doctor_id == self.request.user.id
         if not (is_patient_owner or is_managing_doctor):
             raise PermissionDenied("تنها بیمار یا پزشک مسئول می‌تواند پیش‌نویس متعلق به خود را حذف کند.")
-        if instance.status != MedicalCase.Status.DRAFT:
-            raise ValidationError("پرونده ارسال‌شده قابل حذف نیست.")
-        for image in instance.images.all():
-            image.image.delete(save=False)
-        instance.delete()
+        with image_write(instance.pk) as case:
+            files = [image.image for image in case.images.all()]
+            case.delete()
+            transaction.on_commit(lambda: [file.delete(save=False) for file in files])
 
     @action(detail=False, methods=["get", "post"], url_path="my-patients")
     def my_patients(self, request):
@@ -118,11 +119,25 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
     @action(detail=True, methods=["post"], url_path="images", parser_classes=[MultiPartParser, FormParser])
     def upload_image(self, request, pk=None):
         case = self.get_object()
-        if case.status != MedicalCase.Status.DRAFT:
-            raise ValidationError("پرونده ثبت‌شده قابل ویرایش نیست.")
         serializer = XRayImageSerializer(data=request.data, context={"request": request})
         serializer.is_valid(raise_exception=True)
-        image = serializer.save(case=case)
+        replacement_id = serializer.validated_data.pop("replace_image_id", None)
+        with image_write(case.pk) as case:
+            purpose = serializer.validated_data.get("purpose", "xray")
+            key = slot_key(serializer.validated_data.get("declared_side"), serializer.validated_data.get("declared_view")) if purpose == "xray" else None
+            old = None
+            if replacement_id:
+                old = case.images.filter(pk=replacement_id, purpose=purpose).first()
+                if not old:
+                    raise ValidationError({"replace_image_id": "تصویر برای جایگزینی پیدا نشد؛ پرونده را تازه‌سازی کنید."})
+                if old.slot_key != key:
+                    raise ValidationError({"replace_image_id": "جایگزینی باید در همان جایگاه انجام شود."})
+            check_slot(case, key, exclude_id=replacement_id)
+            if old:
+                old_file = old.image
+                old.delete()
+                transaction.on_commit(lambda: old_file.delete(save=False))
+            image = serializer.save(case=case, slot_key=key, organized=purpose == "xray")
         return Response(XRayImageSerializer(image, context={"request": request}).data, status=status.HTTP_201_CREATED)
 
     @action(detail=True, methods=["post"])
@@ -131,7 +146,7 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
         if case.status != MedicalCase.Status.DRAFT:
             raise ValidationError("این پرونده قبلاً ثبت شده است.")
         try:
-            with transaction.atomic():
+            with image_write(case.pk) as case:
                 case.submit()
         except ValueError as exc:
             raise ValidationError(str(exc)) from exc
@@ -219,8 +234,51 @@ class XRayImageViewSet(viewsets.GenericViewSet):
 
     def destroy(self, request, pk=None):
         image = self.get_object()
-        if image.case.status != MedicalCase.Status.DRAFT:
-            raise ValidationError("تصویر پرونده ثبت‌شده قابل حذف نیست.")
-        image.delete()
-        image.image.delete(save=False)
+        with image_write(image.case_id) as case:
+            current = case.images.filter(pk=image.pk).first()
+            if current:
+                file = current.image
+                current.delete()
+                transaction.on_commit(lambda: file.delete(save=False))
         return Response(status=status.HTTP_204_NO_CONTENT)
+
+    @action(detail=True, methods=["post"])
+    def classify(self, request, pk=None):
+        image = self.get_object()
+        if image.purpose != "xray":
+            raise ValidationError("طبقه‌بندی فقط برای رادیولوژی زانو است.")
+        try:
+            api_key = get_api_key(request.user)
+        except AIKeyUnavailable:
+            api_key = ""
+        current, failure = classify_image(image, api_key)
+        if current is None:
+            return Response({"detail": "پاسخ قدیمی کنار گذاشته شد؛ پرونده را تازه‌سازی کنید.", "code": "stale_response"}, status=status.HTTP_409_CONFLICT)
+        data = XRayImageSerializer(current, context={"request": request}).data
+        return Response(data, status=status.HTTP_503_SERVICE_UNAVAILABLE if failure == "provider_unavailable" else status.HTTP_502_BAD_GATEWAY if failure else status.HTTP_200_OK)
+
+    @action(detail=True, methods=["post"])
+    def confirm(self, request, pk=None):
+        image = self.get_object()
+        if image.purpose != "xray":
+            raise ValidationError("تصاویر آزمایش جایگاه زانو ندارند.")
+        serializer = ImageConfirmationSerializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+        values = serializer.validated_data
+        with image_write(image.case_id) as case:
+            current = case.images.filter(pk=image.pk).first()
+            if not current:
+                raise ValidationError("تصویر برای تأیید پیدا نشد؛ پرونده را تازه‌سازی کنید.")
+            key = slot_key(values["side"], values["view"])
+            check_slot(case, key, exclude_id=current.pk)
+            current.confirmed_side = values["side"]
+            current.confirmed_view = values["view"]
+            current.confirmation_reason = values.get("reason", "").strip()
+            current.confirmed_by = request.user
+            current.confirmed_at = timezone.now()
+            current.confirmation_source = "manual"
+            current.classification_token = None
+            current.classification_status = "completed"
+            current.slot_key = key
+            current.save()
+        return Response(XRayImageSerializer(current, context={"request": request}).data)
