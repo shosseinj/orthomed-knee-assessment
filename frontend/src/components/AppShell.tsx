@@ -5,9 +5,8 @@ import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { authApi } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { accountRoleLabel } from "../utils/accountRole";
 import { Logo } from "./Logo";
-
-const roleLabels = { patient: "بیمار", doctor: "پزشک", insurance: "کارشناس بیمه" };
 
 export function AppShell() {
   useLocale();
@@ -32,6 +31,8 @@ export function AppShell() {
   }, [open]);
   if (!user) return null;
 
+  const isAdmin = user.role === "admin" || Boolean(user.can_manage_accounts);
+  const RoleIcon = user.can_manage_accounts || user.role === "insurance" ? ShieldCheck : user.role === "doctor" ? Stethoscope : UserRound;
   const handleLogout = () => { logout(); navigate("/login"); };
   return <div className="app-layout">
     <aside className={`sidebar ${open ? "sidebar--open" : ""}`}>
@@ -39,15 +40,15 @@ export function AppShell() {
       <div className="sidebar__brand"><Logo /></div>
       <nav className="sidebar__nav" onClick={() => setOpen(false)}>
         {user.can_manage_accounts && <NavLink to="/management"><ShieldCheck size={20} /> {t("مدیر سامانه")}</NavLink>}
-        <NavLink to="/dashboard" end><ClipboardList size={20} />  {t("پرونده‌ها")}</NavLink>
-        {user.role === "patient" && <NavLink to="/cases/new"><Plus size={20} />  {t("پرونده جدید")}</NavLink>}
+        {!isAdmin && <NavLink to="/dashboard" end><ClipboardList size={20} />  {t(user.role === "doctor" ? "پرونده‌های بیماران" : user.role === "insurance" ? "بررسی پوشش بیمه" : "پرونده‌های من")}</NavLink>}
+        {!isAdmin && user.role === "patient" && <NavLink to="/cases/new"><Plus size={20} />  {t("پرونده جدید")}</NavLink>}
         <NavLink to="/settings"><Settings size={20} /> {t("تنظیمات")}</NavLink>
         {user.role === "doctor" && <span className="nav-caption"><Stethoscope size={19} />  {t("پنل پزشک")}</span>}
         {user.role === "insurance" && <span className="nav-caption"><ShieldCheck size={19} />  {t("پنل بیمه")}</span>}
       </nav>
       <div className="sidebar__footer">
         <NavLink to="/profile" className="sidebar__user" onClick={() => setOpen(false)} aria-label={t("مشاهده اطلاعات حساب {0}", { 0: user.full_name })}>
-          <span className="sidebar__avatar"><UserRound size={22} /></span><div><strong>{user.full_name}</strong><small>{t(user.can_manage_accounts ? "مدیر سامانه" : roleLabels[user.role])}</small></div>
+          <span className="sidebar__avatar"><RoleIcon size={22} /></span><div><strong>{user.full_name}</strong><small>{t(accountRoleLabel(user))}</small></div>
         </NavLink>
         <button className="sidebar__logout" type="button" onClick={handleLogout}><LogOut size={19} /> {t("خروج از حساب")}</button>
       </div>
@@ -56,6 +57,7 @@ export function AppShell() {
     <main className="main">
       <header className="topbar">
         <button className="icon-button menu-button" onClick={() => setOpen(true)} aria-label={t("باز کردن منو")} aria-expanded={open}><Menu /></button>
+        <span className="account-role" aria-label={t("نوع حساب")}><RoleIcon size={18} aria-hidden="true" /><strong>{t(accountRoleLabel(user))}</strong></span>
         <div className="topbar__actions">
           <LanguageSwitcher />
           <button className="icon-button notification" aria-label={t("اعلان‌ها")}><Bell size={21} /></button>
@@ -65,8 +67,8 @@ export function AppShell() {
     </main>
     <nav className="mobile-nav" aria-label={t("ناوبری اصلی")}>
       {user.can_manage_accounts && <NavLink to="/management"><ShieldCheck size={21} /><span>{t("مدیریت")}</span></NavLink>}
-      <NavLink to="/dashboard" className={({ isActive }) => isActive || location.pathname.startsWith("/cases/") && location.pathname !== "/cases/new" ? "active" : ""}><ClipboardList size={21} /><span>{t("پرونده‌ها")}</span></NavLink>
-      {user.role === "patient" && <NavLink to="/cases/new" className="mobile-nav__create"><Plus size={24} /><span>{t("پرونده جدید")}</span></NavLink>}
+      {!isAdmin && <NavLink to="/dashboard" className={({ isActive }) => isActive || location.pathname.startsWith("/cases/") && location.pathname !== "/cases/new" ? "active" : ""}><ClipboardList size={21} /><span>{t("پرونده‌ها")}</span></NavLink>}
+      {!isAdmin && user.role === "patient" && <NavLink to="/cases/new" className="mobile-nav__create"><Plus size={24} /><span>{t("پرونده جدید")}</span></NavLink>}
       <NavLink to="/settings"><Settings size={21} /><span>{t("تنظیمات")}</span></NavLink>
       {user.role !== "patient" && <button type="button" onClick={() => setOpen(true)}><Menu size={21} /><span>{t("منو")}</span></button>}
     </nav>

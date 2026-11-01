@@ -89,7 +89,7 @@ CSRF_COOKIE_SECURE = not DEBUG
 # shared edge Nginx. Django is reachable only on the private Docker network.
 SILENCED_SYSTEM_CHECKS = ["security.W004", "security.W008"]
 REST_FRAMEWORK = {
-    "DEFAULT_AUTHENTICATION_CLASSES": ("rest_framework_simplejwt.authentication.JWTAuthentication",),
+    "DEFAULT_AUTHENTICATION_CLASSES": ("apps.accounts.authentication.RoleJWTAuthentication",),
     "DEFAULT_PERMISSION_CLASSES": ("rest_framework.permissions.IsAuthenticated",),
     "DEFAULT_PAGINATION_CLASS": "rest_framework.pagination.PageNumberPagination",
     "PAGE_SIZE": 20,
@@ -114,6 +114,8 @@ OTP_BACKEND = os.getenv("OTP_BACKEND", "console")
 ENABLE_MOCK_OTP = env_bool("ENABLE_MOCK_OTP", DEBUG)
 MOCK_OTP_PREFIX = os.getenv("MOCK_OTP_PREFIX", "0950")
 MOCK_OTP_CODE = os.getenv("MOCK_OTP_CODE", "11111")
+# Empty disables password-protected administrator registration.
+ADMIN_REGISTRATION_PASSWORD_HASH = os.getenv("ADMIN_REGISTRATION_PASSWORD_HASH", "").strip()
 SMSIR_API_KEY = os.getenv("SMSIR_API_KEY", "")
 SMSIR_TEMPLATE_ID = os.getenv("SMSIR_TEMPLATE_ID", "")
 SMSIR_CODE_PARAMETER = os.getenv("SMSIR_CODE_PARAMETER", "CODE")

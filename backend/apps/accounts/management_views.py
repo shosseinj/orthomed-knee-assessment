@@ -10,13 +10,13 @@ from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from .models import User
+from .models import RoleRegistration, User
 from .permissions import IsAccountManager
 from .serializers import AccountListQuerySerializer, AccountReviewSerializer, ManagedAccountSerializer
 
 
 def managed_accounts():
-    return User.objects.filter(role__in=(User.Role.DOCTOR, User.Role.INSURANCE))
+    return RoleRegistration.objects.select_related("user").filter(role__in=(User.Role.DOCTOR, User.Role.INSURANCE))
 
 
 class ManagedAccountListView(ListAPIView):
@@ -32,24 +32,24 @@ class ManagedAccountListView(ListAPIView):
             queryset = queryset.filter(role=values["role"])
         status = values.get("status", "all")
         if status == "pending":
-            queryset = queryset.filter(is_verified=False, is_active=True)
+            queryset = queryset.filter(is_verified=False, is_active=True, user__is_active=True)
         elif status == "verified":
-            queryset = queryset.filter(is_verified=True, is_active=True)
+            queryset = queryset.filter(is_verified=True, is_active=True, user__is_active=True)
         elif status == "inactive":
-            queryset = queryset.filter(is_active=False)
+            queryset = queryset.filter(Q(is_active=False) | Q(user__is_active=False))
         if query := values.get("q", ""):
             query = query.translate(str.maketrans("۰۱۲۳۴۵۶۷۸۹٠١٢٣٤٥٦٧٨٩", "01234567890123456789"))
             for term in query.split():
-                queryset = queryset.filter(Q(first_name__icontains=term) | Q(last_name__icontains=term) | Q(phone_number__icontains=term) | Q(national_code__icontains=term) | Q(medical_council_number__icontains=term) | Q(organization_name__icontains=term))
+                queryset = queryset.filter(Q(user__first_name__icontains=term) | Q(user__last_name__icontains=term) | Q(user__phone_number__icontains=term) | Q(user__national_code__icontains=term) | Q(medical_council_number__icontains=term) | Q(organization_name__icontains=term))
         return queryset.order_by("-date_joined", "id")
 
     def list(self, request, *args, **kwargs):
         response = super().list(request, *args, **kwargs)
         response.data["summary"] = managed_accounts().aggregate(
             total=Count("pk"),
-            pending=Count("pk", filter=Q(is_verified=False, is_active=True)),
-            verified=Count("pk", filter=Q(is_verified=True, is_active=True)),
-            inactive=Count("pk", filter=Q(is_active=False)),
+            pending=Count("pk", filter=Q(is_verified=False, is_active=True, user__is_active=True)),
+            verified=Count("pk", filter=Q(is_verified=True, is_active=True, user__is_active=True)),
+            inactive=Count("pk", filter=Q(is_active=False) | Q(user__is_active=False)),
         )
         response["Cache-Control"] = "private, no-store"
         return response
@@ -69,8 +69,18 @@ class ManagedAccountReviewView(APIView):
             target.is_active = True
             changed.append("is_active")
         target.save(update_fields=changed)
+        identity = target.user
+        identity_changes = []
+        if target.role == identity.role:
+            identity.is_verified = target.is_verified
+            identity_changes.append("is_verified")
+        if target.is_verified and not identity.is_active:
+            identity.is_active = True
+            identity_changes.append("is_active")
+        if identity_changes:
+            identity.save(update_fields=identity_changes)
         LogEntry.objects.create(
-            user=request.user, content_type=ContentType.objects.get_for_model(User),
+            user=request.user, content_type=ContentType.objects.get_for_model(RoleRegistration),
             object_id=str(target.pk), object_repr=target.full_name,
             action_flag=CHANGE,
             change_message=json.dumps({"action": "approve_account" if target.is_verified else "revoke_account_approval", "fields": changed}),

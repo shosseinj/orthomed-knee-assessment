@@ -13,6 +13,7 @@ interface BirthDatePickerProps {
   onChange: (value: string) => void;
   required?: boolean;
   name?: string;
+  disabled?: boolean;
 }
 
 interface DatePickerProps extends BirthDatePickerProps {
@@ -26,7 +27,7 @@ export function BirthDatePicker(props: BirthDatePickerProps) {
   return <DatePicker {...props} label="تاریخ تولد" defaultYearOffset={40} />;
 }
 
-export function DatePicker({ value, onChange, required = false, name, label = "تاریخ", min, max, defaultYearOffset = 0 }: DatePickerProps) {
+export function DatePicker({ value, onChange, required = false, name, disabled = false, label = "تاریخ", min, max, defaultYearOffset = 0 }: DatePickerProps) {
   useLocale();
   const labelId = useId();
   const clearError = useClearFieldError(name);
@@ -101,10 +102,10 @@ export function DatePicker({ value, onChange, required = false, name, label = "�
     if (iso && iso <= latestIso && iso >= minimumIso) { onChange(iso); clearError(); setOpen(false); }
   }
 
-  if (locale() === "en-US") return <input type="date" name={name} aria-label={t(label)} value={value} required={required} max={latestIso} min={minimumIso} onChange={(event) => onChange(event.target.value)} />;
+  if (locale() === "en-US") return <input type="date" name={name} aria-label={t(label)} value={value} required={required} disabled={disabled} max={latestIso} min={minimumIso} onChange={(event) => onChange(event.target.value)} />;
 
   return <>
-    <button ref={triggerRef} type="button" className={`birth-date-trigger ${value ? "birth-date-trigger--selected" : ""}`} data-date-picker data-date-value={value} data-min-date={minimumIso} data-max-date={latestIso} aria-label={t(label)} aria-haspopup="dialog" aria-required={required} onClick={() => {
+    <button ref={triggerRef} type="button" disabled={disabled} className={`birth-date-trigger ${value ? "birth-date-trigger--selected" : ""}`} data-date-picker data-date-value={value} data-min-date={minimumIso} data-max-date={latestIso} aria-label={t(label)} aria-haspopup="dialog" aria-required={required} onClick={() => {
       setYear(cursor.year); setMonth(cursor.month);
       setShowYearPicker(false);
       setOpen(true);

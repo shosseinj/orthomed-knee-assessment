@@ -8,6 +8,7 @@ import { ApiError, apiFieldErrors, authApi } from "../api/client";
 import { BirthDatePicker } from "../components/BirthDatePicker";
 import { Toast } from "../components/Toast";
 import { useAuth } from "../context/AuthContext";
+import { accountRoleLabel } from "../utils/accountRole";
 
 export function ProfilePage() {
   useLocale();
@@ -62,12 +63,11 @@ export function ProfilePage() {
           <div><dt>{t("نام")}</dt><dd>{user.first_name || t("ثبت نشده")}</dd></div>
           <div><dt>{t("نام خانوادگی")}</dt><dd>{user.last_name || t("ثبت نشده")}</dd></div>
           <div><dt>{t("تاریخ تولد")}</dt><dd>{formatDate(user.birth_date)}</dd></div>
-          <div><dt>{t("نوع حساب")}</dt><dd>{t(user.role === "doctor" ? "پزشک" : "کارشناس بیمه")}</dd></div>
           {user.role === "doctor" && <div><dt>{t("شماره نظام پزشکی")}</dt><dd>{user.medical_council_number || t("ثبت نشده")}</dd></div>}
           {user.role === "insurance" && <div><dt>{t("نام شرکت یا سازمان بیمه")}</dt><dd>{user.organization_name || t("ثبت نشده")}</dd></div>}
         </dl>}
       </section>
-      <aside className="content-card profile-locked"><span className="profile-locked__icon"><LockKeyhole /></span><h3>{t("اطلاعات ثابت حساب")}</h3><p>{t("شماره موبایل و کد ملی در این بخش قابل ویرایش نیستند.")}</p><div><span><Fingerprint size={17} />  {t("کد ملی")}</span><strong dir="ltr">{user.national_code || t("ثبت نشده")}</strong></div><div><span><CalendarDays size={17} />  {t("شماره موبایل")}</span><strong dir="ltr">{user.phone_number}</strong></div></aside>
+      <aside className="content-card profile-locked"><span className="profile-locked__icon"><LockKeyhole /></span><h3>{t("اطلاعات ثابت حساب")}</h3><p>{t("شماره موبایل و کد ملی در این بخش قابل ویرایش نیستند.")}</p><div><span><UserRound size={17} />  {t("نوع حساب")}</span><strong>{t(accountRoleLabel(user))}</strong></div><div><span><Fingerprint size={17} />  {t("کد ملی")}</span><strong dir="ltr">{user.national_code || t("ثبت نشده")}</strong></div><div><span><CalendarDays size={17} />  {t("شماره موبایل")}</span><strong dir="ltr">{user.phone_number}</strong></div></aside>
     </div>
   </>;
 }

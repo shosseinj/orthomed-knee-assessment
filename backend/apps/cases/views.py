@@ -46,9 +46,9 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
 
     def get_queryset(self):
         queryset = MedicalCase.objects.select_related("patient", "managing_doctor").prefetch_related("images", "assessments__author")
-        if self.request.user.role == User.Role.PATIENT:
+        if self.request.user.active_role == User.Role.PATIENT:
             return queryset.filter(patient=self.request.user)
-        if self.request.user.role == User.Role.INSURANCE:
+        if self.request.user.active_role == User.Role.INSURANCE:
             return queryset.filter(status__in=(MedicalCase.Status.UNDER_REVIEW, MedicalCase.Status.COMPLETED))
         return queryset.filter(Q(managing_doctor=self.request.user) | ~Q(status=MedicalCase.Status.DRAFT)).distinct()
 
@@ -56,7 +56,7 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
         return MedicalCaseDetailSerializer if self.action == "retrieve" else MedicalCaseListSerializer
 
     def perform_create(self, serializer):
-        if self.request.user.role == User.Role.PATIENT:
+        if self.request.user.active_role == User.Role.PATIENT:
             serializer.save(patient=self.request.user)
             return
         patient_id = self.request.data.get("patient_id")
@@ -69,8 +69,8 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
         serializer.save(patient=assignment.patient, managing_doctor=self.request.user)
 
     def perform_destroy(self, instance):
-        is_patient_owner = self.request.user.role == User.Role.PATIENT and instance.patient_id == self.request.user.id
-        is_managing_doctor = self.request.user.role == User.Role.DOCTOR and instance.managing_doctor_id == self.request.user.id
+        is_patient_owner = self.request.user.active_role == User.Role.PATIENT and instance.patient_id == self.request.user.id
+        is_managing_doctor = self.request.user.active_role == User.Role.DOCTOR and instance.managing_doctor_id == self.request.user.id
         if not (is_patient_owner or is_managing_doctor):
             raise PermissionDenied("تنها بیمار یا پزشک مسئول می‌تواند پیش‌نویس متعلق به خود را حذف کند.")
         with image_write(instance.pk) as case:
@@ -80,11 +80,13 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
 
     @action(detail=False, methods=["get", "post"], url_path="my-patients")
     def my_patients(self, request):
-        if request.user.role != User.Role.DOCTOR or not request.user.is_verified:
+        if request.user.active_role != User.Role.DOCTOR or not request.user.active_is_verified:
             raise PermissionDenied("تنها پزشک تأییدشده به فهرست بیماران دسترسی دارد.")
         if request.method == "POST":
             phone_number = normalize_phone(str(request.data.get("phone_number", "")))
-            patient = User.objects.filter(phone_number=phone_number, role=User.Role.PATIENT).first()
+            patient = User.objects.filter(phone_number=phone_number, is_active=True,
+                                          role_registrations__role=User.Role.PATIENT,
+                                          role_registrations__is_active=True).first()
             if not patient:
                 raise ValidationError({"phone_number": "بیماری با این شماره موبایل ثبت‌نام نکرده است."})
             assignment, created = DoctorPatient.objects.get_or_create(doctor=request.user, patient=patient)
@@ -108,7 +110,7 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
     def womac(self, request, pk=None):
         case = self.get_object()
         instance = WOMACResponse.objects.filter(case=case).first()
-        can_complete_missing = request.user.role == User.Role.DOCTOR and request.user.is_verified and case.status == MedicalCase.Status.SUBMITTED and instance is None
+        can_complete_missing = request.user.active_role == User.Role.DOCTOR and request.user.active_is_verified and case.status == MedicalCase.Status.SUBMITTED and instance is None
         if case.status != MedicalCase.Status.DRAFT and not can_complete_missing:
             raise ValidationError("پرونده ثبت‌شده قابل ویرایش نیست.")
         serializer = WOMACSerializer(instance, data=request.data)
@@ -158,7 +160,7 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["post"], url_path="ai-assessment")
     def ai_assessment(self, request, pk=None):
-        if request.user.role != User.Role.DOCTOR or not request.user.is_verified:
+        if request.user.active_role != User.Role.DOCTOR or not request.user.active_is_verified:
             raise PermissionDenied("تنها پزشک تأییدشده می‌تواند تحلیل هوش مصنوعی را درخواست کند.")
         case = self.get_object()
         existing = case.assessments.filter(source=Assessment.Source.AI).first()
@@ -182,7 +184,7 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["put"], url_path="doctor-assessment")
     def doctor_assessment(self, request, pk=None):
-        if request.user.role != User.Role.DOCTOR or not request.user.is_verified:
+        if request.user.active_role != User.Role.DOCTOR or not request.user.active_is_verified:
             raise PermissionDenied("تنها پزشک تأییدشده می‌تواند نظر ثبت کند.")
         with transaction.atomic():
             case = MedicalCase.objects.select_for_update().get(pk=self.get_object().pk)
@@ -202,7 +204,7 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
 
     @action(detail=True, methods=["put"], url_path="insurance-decision")
     def insurance_decision(self, request, pk=None):
-        if request.user.role != User.Role.INSURANCE or not request.user.is_verified:
+        if request.user.active_role != User.Role.INSURANCE or not request.user.active_is_verified:
             raise PermissionDenied("تنها کارشناس تأییدشده بیمه می‌تواند تصمیم ثبت کند.")
         with transaction.atomic():
             case = MedicalCase.objects.select_for_update().get(pk=self.get_object().pk)

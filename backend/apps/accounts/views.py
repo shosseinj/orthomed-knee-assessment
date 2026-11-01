@@ -11,6 +11,7 @@ from .access_audit import AccessEventKind, record_access
 from .models import AISettings, User
 from .ai_settings import save_api_key, settings_status
 from .services import SMSDeliveryError, otp_metadata
+from .throttles import AdminRegistrationThrottle
 from .serializers import AISettingsSerializer, AccountSelfSerializer, OTPRequestSerializer, OTPVerifySerializer, PanelAccessSerializer, PatientProfileSerializer, RegistrationSerializer
 
 
@@ -72,8 +73,10 @@ class OTPVerifyView(APIView):
         return Response(result)
 
 
+@method_decorator(sensitive_post_parameters("admin_password"), name="dispatch")
 class RegistrationView(APIView):
     permission_classes = [AllowAny]
+    throttle_classes = [AdminRegistrationThrottle]
 
     def post(self, request):
         serializer = RegistrationSerializer(data=request.data)
@@ -104,7 +107,7 @@ class MeView(APIView):
         return Response(AccountSelfSerializer(request.user).data)
 
     def patch(self, request):
-        if request.user.role != User.Role.PATIENT:
+        if request.user.active_role != User.Role.PATIENT:
             raise PermissionDenied("تنها بیمار می‌تواند پروفایل خود را از این بخش ویرایش کند.")
         serializer = PatientProfileSerializer(request.user, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)

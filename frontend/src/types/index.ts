@@ -1,5 +1,5 @@
 import type { PrevisitAnswers, DoctorExamination } from "../data/previsit";
-export type Role = "patient" | "doctor" | "insurance";
+export type Role = "patient" | "doctor" | "insurance" | "admin";
 export type CaseStatus = "draft" | "submitted" | "under_review" | "completed";
 export type Verdict = "surgery" | "no_surgery" | "inconclusive";
 

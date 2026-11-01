@@ -125,6 +125,7 @@
   .topbar__title { min-width: 0; }
   .topbar__title h1 { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: 15px; }
   .topbar__actions { gap: 0; }
+  .account-role { min-width: 0; gap: 5px; margin-inline: 4px; padding: 6px 8px; font-size: 11px; white-space: normal; line-height: 1.5; }
   .user-chip > span { width: 39px; height: 39px; }
   .page { padding: 20px 13px calc(108px + env(safe-area-inset-bottom)); }
   .page-heading { align-items: stretch; flex-direction: column; margin-bottom: 20px; }

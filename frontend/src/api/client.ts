@@ -70,7 +70,7 @@ function uploadCaseImage(id: string, data: FormData, onProgress?: (percent: numb
 }
 
 type LoginResult = { access: string; refresh: string; user: import("../types").User };
-type OTPVerificationResult = ({ registration_required: false } & LoginResult) | { registration_required: true; registration_token: string };
+type OTPVerificationResult = ({ registration_required: false } & LoginResult) | { registration_required: true; registration_token: string; registration_profile?: Partial<import("../types").User> };
 
 export const authApi = {
   managedAccounts: (params: URLSearchParams, signal?: AbortSignal) => api<import("../types").ManagedAccountList>(`/auth/management/accounts/?${params}`, { signal }),

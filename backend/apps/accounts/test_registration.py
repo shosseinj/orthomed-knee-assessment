@@ -8,13 +8,13 @@ from .models import OTPChallenge, User
 from .services import issue_otp
 
 
-@override_settings(DEBUG=True, OTP_BACKEND="console", ENABLE_MOCK_OTP=True, MOCK_OTP_CODE="11111")
+@override_settings(DEBUG=True, OTP_BACKEND="console", ENABLE_MOCK_OTP=True, MOCK_OTP_CODE="11111", ADMIN_REGISTRATION_PASSWORD_HASH="")
 class VerifiedRegistrationTests(TestCase):
     phone = "09123456789"
     identity = {"first_name": "سارا", "last_name": "محمدی", "national_code": "0013520822", "birth_date": "1990-01-01"}
 
-    def verify(self, code="11111"):
-        return self.client.post("/api/v1/auth/otp/verify/", {"phone_number": self.phone, "code": code}, content_type="application/json")
+    def verify(self, code="11111", **extra):
+        return self.client.post("/api/v1/auth/otp/verify/", {"phone_number": self.phone, "code": code, **extra}, content_type="application/json")
 
     def register(self, token, **extra):
         return APIClient().post("/api/v1/auth/register/", {**self.identity, "registration_token": token, **extra}, format="json")
@@ -92,3 +92,94 @@ class VerifiedRegistrationTests(TestCase):
 
     def test_old_phone_lookup_endpoint_is_removed(self):
         self.assertEqual(APIClient().post("/api/v1/auth/phone/check/", {"phone_number": self.phone}, format="json").status_code, 404)
+
+    def test_selected_existing_role_signs_in_without_changing_the_account(self):
+        for role in User.CLINICAL_ROLES:
+            with self.subTest(role=role):
+                user = User.objects.create_user(self.phone, role=role, is_verified=False)
+                issue_otp(self.phone)
+                response = self.verify(entry_role=role)
+                self.assertEqual(response.status_code, 200, response.data)
+                self.assertFalse(response.data["registration_required"])
+                self.assertEqual(response.data["user"]["role"], role)
+                self.assertFalse(response.data["user"]["is_verified"])
+                user.delete()
+
+    def test_missing_role_starts_its_own_registration_without_changing_existing_role(self):
+        user = User.objects.create_user(self.phone, role="doctor")
+        issue_otp(self.phone)
+        response = self.verify(entry_role="patient")
+        self.assertEqual(response.status_code, 200)
+        self.assertTrue(response.data["registration_required"])
+        self.assertNotIn("access", response.data)
+        self.assertIn("registration_token", response.data)
+        registered = self.register(response.data["registration_token"], role="patient")
+        self.assertEqual(registered.status_code, 201, registered.data)
+        self.assertEqual(registered.data["user"]["role"], "patient")
+        user.refresh_from_db()
+        self.assertEqual(user.role, "doctor")
+
+    def test_new_accounts_register_using_the_verified_selection(self):
+        for role in User.CLINICAL_ROLES:
+            with self.subTest(role=role):
+                issue_otp(self.phone)
+                response = self.verify(entry_role=role)
+                self.assertEqual(response.status_code, 200, response.data)
+                self.assertTrue(response.data["registration_required"])
+                token = response.data["registration_token"]
+                payload = signing.loads(token, salt="accounts.phone-registration")
+                self.assertEqual(payload["role"], role)
+                result = self.register(token, role=role, medical_council_number="12345", organization_name="Test insurance")
+                self.assertEqual(result.status_code, 201, result.data)
+                self.assertEqual(result.data["user"]["role"], role)
+                self.assertEqual(result.data["user"]["is_verified"], role == "patient")
+                self.assertFalse(result.data["user"]["can_manage_accounts"])
+                User.objects.all().delete()
+
+    def test_registration_cannot_change_the_signed_role(self):
+        issue_otp(self.phone)
+        token = self.verify(entry_role="doctor").data["registration_token"]
+        response = self.register(token, role="patient")
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("role", response.data["errors"])
+        self.assertFalse(User.objects.exists())
+
+    def test_admin_entry_requires_existing_management_permissions(self):
+        from django.contrib.auth.models import Permission
+
+        for existing_role in (None, "patient", "doctor", "insurance"):
+            with self.subTest(role=existing_role):
+                if existing_role:
+                    User.objects.create_user(self.phone, role=existing_role, is_staff=True)
+                issue_otp(self.phone)
+                response = self.verify(entry_role="admin")
+                self.assertEqual(response.status_code, 400)
+                self.assertIn("entry_role", response.data["errors"])
+                self.assertNotIn("access", response.data)
+                self.assertNotIn("registration_token", response.data)
+                self.assertEqual(User.objects.count(), int(existing_role is not None))
+                User.objects.all().delete()
+        manager = User.objects.create_user(self.phone, is_staff=True)
+        manager.user_permissions.add(Permission.objects.get(codename="manage_account_verifications"))
+        issue_otp(self.phone)
+        response = self.verify(entry_role="admin")
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertTrue(response.data["user"]["can_manage_accounts"])
+        manager.delete()
+        User.objects.create_superuser(self.phone, "test-password")
+        issue_otp(self.phone)
+        self.assertEqual(self.verify(entry_role="admin").status_code, 200)
+
+    def test_admin_role_is_not_available_at_registration(self):
+        issue_otp(self.phone)
+        token = self.verify(entry_role="patient").data["registration_token"]
+        self.assertEqual(self.register(token, role="admin").status_code, 400)
+        self.assertFalse(User.objects.exists())
+
+    def test_invalid_otp_does_not_reveal_whether_admin_account_exists(self):
+        issue_otp(self.phone)
+        with patch("apps.accounts.serializers.User.objects.filter") as lookup:
+            response = self.verify("54321", entry_role="admin")
+            lookup.assert_not_called()
+        self.assertEqual(response.status_code, 400)
+        self.assertIn("code", response.data["errors"])

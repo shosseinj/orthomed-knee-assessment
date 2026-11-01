@@ -85,7 +85,22 @@ SMSIR_CODE_PARAMETER=CODE
 
 Use the ID of your approved SMS.ir verification template. `SMSIR_CODE_PARAMETER` must match the template's OTP placeholder name without `#` characters: for `#PARAMETER1#`, set it to `PARAMETER1`. Use a verification template with one code placeholder; the website generates a random five-digit code for that parameter. The backend sends the request to SMS.ir's [`POST /v1/send/verify` endpoint](https://api.sms.ir/swagger/index.html), with the API key in the `x-api-key` header. The key stays on the backend.
 
-Enter a mobile number to receive a code immediately; no terms checkbox is required. The backend verifies the code before looking up the account. Existing users sign in immediately. New users then complete registration without requesting a second code. Their verified phone is carried in a signed registration token that expires after 15 minutes and only permits creating that phone's account; it cannot be reused to sign in. Account status is not disclosed before verification.
+Choose **Patient**, **Doctor**, **Insurance company**, or **Admin**, then enter a mobile number to receive a code; no terms checkbox is required. The backend verifies the code before looking up the account. If the selected role is already registered, the user signs in to that role. Otherwise, they complete registration for that role without another code, even if the number already has another role. For example, an existing patient can register as a doctor using the same phone and national ID; the patient account and its cases remain intact. Known identity fields are prefilled and preserved. Doctors provide a medical council number and insurance users provide an organization name. Each role has its own approval and activation status.
+
+The signed registration token binds the verified phone, selected role, and existing identity ID (when adding a role), expires after 15 minutes, and cannot be reused to sign in or register another role. Account status is not disclosed before verification. JWT access and refresh tokens carry the active role; the backend checks current registration, approval, activation, and administrative permission on subsequent requests. Refreshing a token keeps its role. To enter another role, sign out and select it on the entry page. Older API clients that omit `entry_role` enter the account's original role (or administration for an authorized manager).
+
+**Admin** entry signs existing administrators in after phone verification. When `ADMIN_REGISTRATION_PASSWORD_HASH` is configured, users who have not registered as an administrator can complete signup after verifying their phone and entering the administrator registration password. The backend checks that password against its configured Django hash, stores the account password as a hash, and grants only `accounts.manage_account_verifications` with staff status; it does not grant superuser or user-editing permissions. An existing patient/doctor/insurance identity can add the admin role without changing its other registrations. Five admin-registration requests per minute per IP are allowed. Clearing the setting disables further admin registration; existing administrators can still sign in. Doctor and insurance registration still requires administrator approval before clinical access.
+
+After sign-in, the account role is visible in the application header on desktop and mobile, in the sidebar, and in the profile. Labels use the server-provided role and account-management permission; administrators are labelled **System administrator** and enter account management, while patients, doctors, and insurance reviewers enter their dashboard. Doctor and insurance accounts awaiting approval keep their role label while access remains restricted.
+
+| Active role | Workspace capabilities |
+| --- | --- |
+| Patient | Create and track their own cases, edit draft history and WOMAC answers, upload images, and manage personal identity details. Medical and AI assessment details remain hidden. |
+| Approved doctor | Manage assigned patients, create their cases, review submitted cases, request AI analysis, and record medical assessments. |
+| Approved insurance reviewer | Review cases awaiting coverage decisions and completed cases, read clinical assessments, and record insurance decisions. Case creation and medical-assessment tools are unavailable. |
+| Administrator | Search, approve, reactivate, and revoke doctor/insurance role registrations independently. Clinical case routes are unavailable in the admin session. |
+
+Migration `accounts/0006_role_registrations` copies every existing user's original role and approval into a role-registration record without changing user IDs, cases, images, or national-ID uniqueness. Primary registrations retain the user ID as their management ID; additional registrations have independent IDs. Original user role fields remain for existing integrations, while API authorization uses the role bound to the session. A doctor/insurance approval applies only to that registration, and a patient's session cannot use admin permissions even when the same identity also has admin access. Django Admin can inspect role registrations; the account's global activation remains separate from each role's activation.
 
 Codes expire after two minutes and can be used once. If configuration is missing or SMS.ir rejects the request, the website shows a delivery error and the failed challenge is removed. The environment example enables SMS.ir delivery, so enter your credentials before using sign-in. To develop without sending SMS, explicitly set `OTP_BACKEND=console` and `ENABLE_MOCK_OTP=true` with `DJANGO_DEBUG=true`.
 
@@ -108,7 +123,7 @@ python backend/manage.py grant_account_manager <registered-mobile-number>
 .venv/bin/python backend/manage.py grant_account_manager 09XXXXXXXXX
 ```
 
-This grants the dedicated `accounts.manage_account_verifications` permission, without superuser access or permission to edit account roles. Administrator access cannot be selected at public registration or granted from the account-approval page. Django Admin remains available at [http://localhost:8000/admin/](http://localhost:8000/admin/).
+This grants the dedicated `accounts.manage_account_verifications` permission, without superuser access or permission to edit account roles. Administrator access can also be registered through the password-protected Admin signup described above; the account-approval page cannot grant it. Django Admin remains available at [http://localhost:8000/admin/](http://localhost:8000/admin/).
 
 ## Run with Docker
 
@@ -136,6 +151,7 @@ Copy `.env.example` to `.env`; keep real credentials out of Git.
 | `API_PROXY_TARGET` | Optional development proxy target; defaults to `http://127.0.0.1:8000` |
 | `OTP_BACKEND` | `console` for local development or `smsir` for SMS delivery |
 | `ENABLE_MOCK_OTP` | Enables the development test-number flow |
+| `ADMIN_REGISTRATION_PASSWORD_HASH` | Django hash for the admin signup password; empty disables admin signup. Store it in server configuration, single-quoted to preserve `$` characters. |
 | `SMSIR_API_KEY`, `SMSIR_TEMPLATE_ID` | SMS.ir API key and numeric verification template ID |
 | `SMSIR_CODE_PARAMETER` | Template's OTP placeholder name, without `#`; defaults to `CODE` |
 | `OPENAI_API_KEY`, `OPENAI_API_URL`, `OPENAI_MODEL` | AI analysis provider configuration |

@@ -14,6 +14,9 @@ class User(AbstractBaseUser, PermissionsMixin):
         PATIENT = "patient", "بیمار"
         DOCTOR = "doctor", "پزشک"
         INSURANCE = "insurance", "بیمه"
+        ADMIN = "admin", "مدیر سامانه"
+
+    CLINICAL_ROLES = (Role.PATIENT, Role.DOCTOR, Role.INSURANCE)
 
     id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
     phone_number = models.CharField(max_length=11, unique=True)
@@ -43,6 +46,58 @@ class User(AbstractBaseUser, PermissionsMixin):
 
     def __str__(self):
         return self.full_name
+
+    @property
+    def active_role(self):
+        return getattr(self, "_session_role", self.role)
+
+    @property
+    def active_registration(self):
+        if not hasattr(self, "_active_registration"):
+            self._active_registration = self.role_registrations.filter(role=self.active_role).first()
+        return self._active_registration
+
+    @property
+    def active_is_verified(self):
+        if self.active_role == "admin":
+            return True
+        if self.active_role == self.role:
+            return self.is_verified
+        return bool(self.active_registration and self.active_registration.is_verified)
+
+    @property
+    def active_medical_council_number(self):
+        if self.active_role != self.Role.DOCTOR:
+            return ""
+        return self.medical_council_number if self.role == self.Role.DOCTOR else self.active_registration.medical_council_number
+
+    @property
+    def active_organization_name(self):
+        if self.active_role != self.Role.INSURANCE:
+            return ""
+        return self.organization_name if self.role == self.Role.INSURANCE else self.active_registration.organization_name
+
+    @property
+    def active_full_name(self):
+        return self.active_organization_name or f"{self.first_name} {self.last_name}".strip() or self.phone_number
+
+
+class RoleRegistration(models.Model):
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="role_registrations")
+    role = models.CharField(max_length=16, choices=User.Role.choices)
+    medical_council_number = models.CharField(max_length=32, blank=True)
+    organization_name = models.CharField(max_length=160, blank=True)
+    is_verified = models.BooleanField(default=False)
+    is_active = models.BooleanField(default=True)
+    date_joined = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        constraints = [models.UniqueConstraint(fields=("user", "role"), name="one_registration_per_user_role")]
+
+    @property
+    def full_name(self):
+        return self.organization_name if self.role == User.Role.INSURANCE and self.organization_name else f"{self.user.first_name} {self.user.last_name}".strip() or self.user.phone_number
 
 
 class AISettings(models.Model):

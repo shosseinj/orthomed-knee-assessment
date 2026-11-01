@@ -5,6 +5,7 @@ for (const development of [true, false]) {
     await page.addInitScript(() => localStorage.setItem("orthomed_language", "en"));
     await page.route("**/api/v1/auth/otp/request/", (route) => route.fulfill({ json: { is_mock: development, ...(development ? { development_code: "11111" } : {}) } }));
     await page.goto("/login");
+    await page.getByRole("radio", { name: "Patient", exact: true }).check();
     await page.getByLabel("Mobile number", { exact: true }).fill("09123456789");
     await expect(page.getByRole("checkbox")).toHaveCount(0);
     await page.getByRole("button", { name: "Continue", exact: true }).click();
@@ -24,6 +25,7 @@ test("SMS delivery failure keeps sign-in on the phone step and shows a delivery 
   await page.addInitScript(() => localStorage.setItem("orthomed_language", "en"));
   await page.route("**/api/v1/auth/otp/request/", (route) => route.fulfill({ status: 503, json: { errors: { detail: "ارسال کد تأیید ممکن نشد. کمی بعد دوباره تلاش کنید." } } }));
   await page.goto("/login");
+  await page.getByRole("radio", { name: "Patient", exact: true }).check();
   await page.getByLabel("Mobile number", { exact: true }).fill("09123456789");
   await page.getByRole("button", { name: "Continue", exact: true }).click();
   await expect(page.getByText("Could not send a verification code. Try again shortly.", { exact: true })).toBeVisible();

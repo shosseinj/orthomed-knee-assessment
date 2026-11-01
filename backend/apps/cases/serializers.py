@@ -2,7 +2,7 @@ from django.conf import settings
 from rest_framework import serializers
 
 from apps.accounts.models import User
-from apps.accounts.serializers import PatientIdentitySerializer, UserSerializer
+from apps.accounts.serializers import CasePatientSerializer, DoctorIdentitySerializer
 from .models import Assessment, DoctorPatient, InsuranceDecision, MedicalCase, QuestionnaireResponse, WOMACResponse, XRayImage
 from .questionnaires import KNEE_SUPPLEMENTAL_ITEM_IDS, KNEE_SUPPLEMENTAL_ITEMS, WOMAC_ITEM_IDS, WOMAC_ITEMS
 from .intake import COMMON_CONDITIONS, RED_FLAGS, PAINKILLERS, HIGH_RISK, COMPARTMENTS, previsit_scores
@@ -207,7 +207,7 @@ class ImageConfirmationSerializer(serializers.Serializer):
 
 
 class AssessmentSerializer(serializers.ModelSerializer):
-    author = UserSerializer(read_only=True)
+    author = DoctorIdentitySerializer(read_only=True)
     source_label = serializers.CharField(source="get_source_display", read_only=True)
     verdict_label = serializers.CharField(source="get_verdict_display", read_only=True)
     high_risk_conditions = selection_field(HIGH_RISK)
@@ -249,7 +249,7 @@ class InsuranceDecisionSerializer(serializers.ModelSerializer):
 
 
 class DoctorPatientSerializer(serializers.ModelSerializer):
-    patient = PatientIdentitySerializer(read_only=True)
+    patient = CasePatientSerializer(read_only=True)
 
     class Meta:
         model = DoctorPatient
@@ -258,8 +258,8 @@ class DoctorPatientSerializer(serializers.ModelSerializer):
 
 
 class MedicalCaseListSerializer(serializers.ModelSerializer):
-    patient = PatientIdentitySerializer(read_only=True)
-    managing_doctor = UserSerializer(read_only=True)
+    patient = CasePatientSerializer(read_only=True)
+    managing_doctor = DoctorIdentitySerializer(read_only=True)
     status_label = serializers.CharField(source="get_status_display", read_only=True)
     image_count = serializers.IntegerField(source="images.count", read_only=True)
     has_doctor_assessment = serializers.SerializerMethodField()
@@ -285,7 +285,7 @@ class MedicalCaseListSerializer(serializers.ModelSerializer):
         request = self.context.get("request")
         if not request or obj.status != MedicalCase.Status.DRAFT:
             return False
-        return obj.patient_id == request.user.id or obj.managing_doctor_id == request.user.id
+        return (request.user.active_role == User.Role.PATIENT and obj.patient_id == request.user.id) or (request.user.active_role == User.Role.DOCTOR and obj.managing_doctor_id == request.user.id)
 
 
 class MedicalCaseDetailSerializer(MedicalCaseListSerializer):
@@ -301,13 +301,13 @@ class MedicalCaseDetailSerializer(MedicalCaseListSerializer):
 
     def get_previsit_scores(self, obj):
         request = self.context.get("request")
-        if request and request.user.role == User.Role.PATIENT:
+        if request and request.user.active_role == User.Role.PATIENT:
             return None
         return previsit_scores(obj)
 
     def get_assessments(self, obj):
         request = self.context.get("request")
-        if request and request.user.role == User.Role.PATIENT:
+        if request and request.user.active_role == User.Role.PATIENT:
             return []
         return AssessmentSerializer(obj.assessments.all(), many=True, context=self.context).data
 
