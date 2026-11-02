@@ -76,7 +76,7 @@ test("doctor can retry AI assessment and see results for Hossein Mohammadi", asy
   let calls = 0;
   await page.route(`**/cases/${id}/ai-assessment/`, async (route) => {
     calls++;
-    if (calls === 1) return route.fulfill({ status: 503, json: { detail: "سرویس هوش مصنوعی پیکربندی نشده است؛ تنظیم کلید سرویس توسط مدیر لازم است." } });
+    if (calls === 1) return route.fulfill({ status: 503, json: { detail: "سرویس تحلیل هوش مصنوعی در سامانه فعال نیست؛ با پشتیبانی تماس بگیرید." } });
     const assessment = { id: "ai-1", source: "ai", source_label: "هوش مصنوعی", verdict: "inconclusive", verdict_label: "نیازمند بررسی بیشتر", rationale: "نیاز به بررسی تکمیلی: بله؛ پاسخ آزمایشی سرویس", kl_grade: 2 };
     state.update({ assessments: [assessment] });
     return route.fulfill({ json: assessment });
@@ -84,11 +84,13 @@ test("doctor can retry AI assessment and see results for Hossein Mohammadi", asy
   await page.goto(`/cases/${id}`);
   await expect(page.getByRole("heading", { name: "حسین محمدی", exact: true })).toBeVisible();
   await expect(page.getByText("کاهش عوامل خطر پیش از تصمیم جراحی", { exact: true })).toBeVisible();
+  await expect(page.locator(".ai-settings-link")).toHaveCount(0);
   await page.getByRole("button", { name: "دریافت نظر هوش مصنوعی", exact: true }).click();
-  await expect(page.getByRole("alert")).toContainText("پیکربندی نشده");
+  await expect(page.getByRole("alert")).toContainText("در سامانه فعال نیست");
   await page.getByRole("button", { name: "تلاش دوباره برای دریافت نظر هوش مصنوعی" }).click();
   await expect(page.getByRole("heading", { name: "نتیجه تحلیل هوشمند" })).toBeVisible();
-  await expect(page.getByText("نیاز به بررسی تکمیلی: بله؛ پاسخ آزمایشی سرویس")).toBeVisible();
+  await expect(page.locator(".ai-report").getByRole("heading", { name: /نیاز به بررسی تکمیلی/ })).toBeVisible();
+  await expect(page.locator(".ai-report").getByText("بله؛ پاسخ آزمایشی سرویس", { exact: true })).toBeVisible();
   await expect(page.getByLabel("فلکشن (درجه)")).toBeVisible();
   await page.screenshot({ path: "/tmp/orthomed-doctor-fa.png", fullPage: true });
 });

@@ -211,7 +211,7 @@ class PrevisitTests(TestCase):
 
     @override_settings(OPENAI_API_KEY="server-fallback")
     @patch("apps.cases.services.requests.post")
-    def test_ai_request_uses_requesting_doctors_saved_key_instead_of_server_key(self, post):
+    def test_ai_request_uses_server_key_despite_legacy_doctor_or_patient_keys(self, post):
         from apps.accounts.ai_settings import save_api_key
         import json
         self.make_ready()
@@ -227,21 +227,20 @@ class PrevisitTests(TestCase):
         })}}]}
         response = self.client.post(self.url + "ai-assessment/")
         self.assertEqual(response.status_code, 200, response.data)
-        self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], f"Bearer {doctor_key}")
+        self.assertEqual(post.call_args.kwargs["headers"]["Authorization"], "Bearer server-fallback")
         self.assertNotIn(doctor_key, str(response.data))
         self.assertNotIn(doctor_key, str(self.client.get(self.url).data))
 
-    @override_settings(OPENAI_API_KEY="")
+    @override_settings(OPENAI_API_KEY="sk-proj-invalid-server-test-key-1234")
     @patch("apps.cases.services.requests.post")
-    def test_invalid_user_key_gets_actionable_error_without_echoing_key(self, post):
-        from apps.accounts.ai_settings import save_api_key
+    def test_invalid_server_key_reports_support_error_without_asking_doctor_for_a_key(self, post):
         self.make_ready()
         self.client.force_authenticate(self.doctor)
-        key = "sk-proj-invalid-test-key-1234"
-        save_api_key(self.doctor, key)
+        key = "sk-proj-invalid-server-test-key-1234"
         post.return_value.status_code = 401
         response = self.client.post(self.url + "ai-assessment/")
         self.assertEqual(response.status_code, 502)
-        self.assertIn("تنظیمات", response.data["detail"])
+        self.assertIn("پشتیبانی", response.data["detail"])
+        self.assertNotIn("تنظیمات", response.data["detail"])
         self.assertNotIn(key, str(response.data))
         self.assertFalse(Assessment.objects.filter(source="ai").exists())

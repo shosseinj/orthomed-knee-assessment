@@ -4,6 +4,7 @@ import secrets
 import requests
 from django.conf import settings
 from django.contrib.auth.hashers import check_password, make_password
+from django.db import transaction
 from django.utils import timezone
 
 from .models import OTPChallenge
@@ -98,7 +99,11 @@ def is_mock_otp(phone_number: str) -> bool:
 
 def otp_metadata(phone_number: str) -> dict:
     is_mock = is_mock_otp(phone_number)
-    return {"is_mock": is_mock, **({"development_code": settings.MOCK_OTP_CODE} if is_mock else {})}
+    return {
+        "is_mock": is_mock,
+        "manual_code_enabled": bool(settings.OTP_MANUAL_CODE_HASH),
+        **({"development_code": settings.MOCK_OTP_CODE} if is_mock else {}),
+    }
 
 
 def issue_otp(phone_number: str) -> OTPChallenge:
@@ -109,23 +114,30 @@ def issue_otp(phone_number: str) -> OTPChallenge:
         code_hash=make_password(code),
         expires_at=OTPChallenge.expiry_time(),
     )
+    challenge.sms_sent = False
     if is_mock:
         logger.info("Development OTP issued for %s", phone_number)
     else:
         try:
             get_sms_gateway().send_otp(phone_number, code)
+            challenge.sms_sent = True
         except SMSDeliveryError:
-            challenge.delete()
-            raise
+            if not settings.OTP_MANUAL_CODE_HASH:
+                challenge.delete()
+                raise
+            logger.warning("SMS delivery failed; manual sign-in remains available for this challenge.")
     return challenge
 
 
+@transaction.atomic
 def verify_otp(phone_number: str, code: str) -> bool:
-    challenge = OTPChallenge.objects.filter(phone_number=phone_number, consumed_at__isnull=True).order_by("-created_at").first()
+    challenge = OTPChallenge.objects.select_for_update().filter(phone_number=phone_number).order_by("-created_at").first()
     if not challenge or not challenge.is_usable:
         return False
     challenge.attempts += 1
     valid = check_password(code, challenge.code_hash)
+    if not valid and settings.OTP_MANUAL_CODE_HASH:
+        valid = check_password(code, settings.OTP_MANUAL_CODE_HASH)
     if valid:
         challenge.consumed_at = timezone.now()
     challenge.save(update_fields=["attempts", "consumed_at"])

@@ -8,8 +8,8 @@ from .models import AISettings, User
 @override_settings(OPENAI_API_KEY="", AI_SETTINGS_ENCRYPTION_SECRET="test-encryption-secret")
 class AISettingsTests(TestCase):
     def setUp(self):
-        self.user = User.objects.create_user("09500001111", role="doctor", is_verified=True)
-        self.other = User.objects.create_user("09500002222", role="doctor", is_verified=True)
+        self.user = User.objects.create_user("09500001111", role="patient", is_verified=True)
+        self.other = User.objects.create_user("09500002222", role="patient", is_verified=True)
         self.client = APIClient()
         self.client.force_authenticate(self.user)
         self.url = "/api/v1/auth/settings/ai/"
@@ -74,3 +74,22 @@ class AISettingsTests(TestCase):
         with override_settings(AI_SETTINGS_ENCRYPTION_SECRET="rotated-secret"):
             with self.assertRaises(AIKeyUnavailable):
                 get_api_key(self.user)
+
+    @override_settings(OPENAI_API_KEY="server-managed-key")
+    def test_doctor_uses_server_key_and_cannot_configure_a_personal_key(self):
+        from .ai_settings import save_api_key
+        doctor = User.objects.create_user("09500003333", role="doctor", is_verified=True)
+        save_api_key(doctor, self.key)
+        self.client.force_authenticate(doctor)
+        self.assertEqual(get_api_key(doctor), "server-managed-key")
+        self.assertEqual(self.client.get(self.url).data, {"has_api_key": False, "key_last_four": "", "server_key_configured": True})
+        self.assertEqual(self.save_key().status_code, 403)
+        self.assertEqual(self.client.delete(self.url).status_code, 403)
+        AISettings.objects.filter(user=doctor).update(encrypted_api_key="unreadable-old-key")
+        self.assertEqual(get_api_key(doctor), "server-managed-key")
+
+    def test_doctor_needs_server_configuration_even_if_a_legacy_key_exists(self):
+        from .ai_settings import save_api_key
+        doctor = User.objects.create_user("09500003333", role="doctor", is_verified=True)
+        save_api_key(doctor, self.key)
+        self.assertEqual(get_api_key(doctor), "")

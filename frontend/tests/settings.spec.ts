@@ -1,12 +1,12 @@
 import { expect, test, type Page } from "@playwright/test";
 
 const key = "sk-proj-browser-test-key-1234";
-async function settingsSession(page: Page, failSave = false) {
+async function settingsSession(page: Page, failSave = false, role = "patient") {
   await page.addInitScript(() => { localStorage.setItem("orthomed_access", "test-token"); localStorage.setItem("orthomed_language", "en"); });
   let status = { has_api_key: false, key_last_four: "", server_key_configured: false };
   await page.route("**/api/v1/**", async (route) => {
     const request = route.request();
-    if (request.url().endsWith("/auth/me/")) return route.fulfill({ json: { id: "doctor-1", role: "doctor", first_name: "Alex", full_name: "Alex Doctor", is_verified: true } });
+    if (request.url().endsWith("/auth/me/")) return route.fulfill({ json: { id: "account-1", role, first_name: "Alex", full_name: "Alex Test", is_verified: true } });
     if (request.url().endsWith("/auth/settings/ai/")) {
       if (request.method() === "PUT") {
         if (failSave) return route.fulfill({ status: 400, json: { errors: { openai_api_key: ["Invalid OpenAI key. It must start with sk- and contain no spaces."] } } });
@@ -45,6 +45,16 @@ test("settings saves, masks, replaces and removes a user-owned key without brows
   await page.getByRole("button", { name: "Remove personal key", exact: true }).click();
   await expect(page.getByRole("status").filter({ hasText: "No API key configured yet." })).toBeVisible();
   await expect(page.getByRole("button", { name: "Remove personal key", exact: true })).toHaveCount(0);
+});
+
+test("doctors see the managed AI connection without personal key configuration", async ({ page }) => {
+  await settingsSession(page, false, "doctor");
+  await page.goto("/settings");
+  await expect(page.getByRole("heading", { name: "AI assessment service", exact: true })).toBeVisible();
+  await expect(page.getByText("The application manages the AI connection. You do not need to enter an API key to request an assessment.", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("OPENAI_API_KEY", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Save key", exact: true })).toHaveCount(0);
+  await expect(page.locator('a[href="https://platform.openai.com/api-keys"]')).toHaveCount(0);
 });
 
 test("save errors do not claim a key was saved", async ({ page }) => {

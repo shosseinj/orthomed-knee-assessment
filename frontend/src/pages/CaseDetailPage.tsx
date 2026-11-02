@@ -1,5 +1,6 @@
 import { AuthenticatedImage, AuthenticatedImageLink } from "../components/PrivateImage";
 import { KneeImageManager, ImageCaption } from "../components/KneeImageManager";
+import { AIAnalysisReport } from "../components/AIAnalysisReport";
 import { Field, ValidatedForm, useClearFieldError } from "../components/ValidatedForm";
 import { formatDate } from "../utils/dates";
 import { t, locale, useLocale, catalogLabel } from "../i18n";
@@ -91,7 +92,10 @@ export function CaseDetailPage() {
   async function submitCase() {
     if (!id) return;
     setBusy(true); setError(""); setMessage("");
-    try { await casesApi.submit(id); setShowSubmitModal(false); setMessage(t("پرونده برای بررسی ارسال شد.")); load(); }
+    try {
+      const submittedCase = await casesApi.submit(id);
+      setItem(submittedCase); setShowSubmitModal(false); setMessage(t("پرونده برای بررسی ارسال شد."));
+    }
     catch (e) { setError(apiErrorMessage(e, "برای ثبت نهایی، تکمیل شرح حال، WOMAC و حداقل یک تصویر الزامی است.")); }
     finally { setBusy(false); }
   }
@@ -132,7 +136,7 @@ export function CaseDetailPage() {
       </div>
       {showSubmitModal && <div className="modal-backdrop" role="presentation" onMouseDown={() => !busy && setShowSubmitModal(false)}><section className="confirm-modal" role="dialog" aria-modal="true" aria-labelledby="submit-modal-title" onMouseDown={(event) => event.stopPropagation()}><span className="confirm-modal__icon"><ShieldCheck /></span><span className="eyebrow">{t("ثبت نهایی پرونده")}</span><h3 id="submit-modal-title">{t("برای ارسال پرونده آماده‌اید؟")}</h3><p>{t("پس از تأیید، پاسخ‌ها و تصاویر قفل می‌شوند و پرونده هم‌زمان در اختیار پزشکان و سامانه تحلیل هوشمند قرار می‌گیرد.")}</p><div className="confirm-modal__notice"><LockKeyhole size={17} />  {t("بعد از ارسال امکان ویرایش وجود ندارد.")}</div><div className="confirm-modal__actions"><button className="button button--ghost" disabled={busy} onClick={() => setShowSubmitModal(false)}>{t("بازگشت و بررسی")}</button><button className="button" disabled={busy} onClick={submitCase}>{busy ? <LoaderCircle className="spin" size={18} /> : <Send size={18} />}  {t("تأیید و ارسال")}</button></div></section></div>}
       {showDeleteModal && <div className="modal-backdrop" role="presentation" onMouseDown={() => !busy && setShowDeleteModal(false)}><section className="confirm-modal confirm-modal--danger" role="dialog" aria-modal="true" aria-labelledby="delete-modal-title" onMouseDown={(event) => event.stopPropagation()}><span className="confirm-modal__icon"><Trash2 /></span><span className="eyebrow">{t("حذف پیش‌نویس")}</span><h3 id="delete-modal-title">{t("این پرونده حذف شود؟")}</h3><p>{t("شرح حال، پاسخ‌های WOMAC و تصاویر بارگذاری‌شده این پیش‌نویس برای همیشه حذف می‌شوند.")}</p><div className="confirm-modal__actions"><button className="button button--ghost" disabled={busy} onClick={() => setShowDeleteModal(false)}>{t("انصراف")}</button><button className="button button--danger" disabled={busy} onClick={deleteDraft}>{busy ? <LoaderCircle className="spin" size={18} /> : <Trash2 size={18} />}  {t("حذف پیش‌نویس")}</button></div></section></div>}
-    </div> : <ReviewView item={item} viewerRole={user?.role || "patient"} canDoctorReview={canDoctorReview} lockedForDoctor={lockedForDoctor} canInsuranceReview={canInsuranceReview} lockedForInsurance={lockedForInsurance} onRefresh={() => void load(false)} onDoctorSaved={() => { setMessage(t("نظر پزشکی با موفقیت ثبت شد.")); void load(); }} onInsuranceSaved={() => { setMessage(t("تصمیم بیمه با موفقیت ثبت شد.")); void load(); }} />}
+    </div> : <ReviewView item={item} viewerRole={user?.role || "patient"} canDoctorReview={canDoctorReview} lockedForDoctor={lockedForDoctor} canInsuranceReview={canInsuranceReview} lockedForInsurance={lockedForInsurance} onRefresh={() => load(false)} onDoctorSaved={() => { setMessage(t("نظر پزشکی با موفقیت ثبت شد.")); void load(); }} onInsuranceSaved={() => { setMessage(t("تصمیم بیمه با موفقیت ثبت شد.")); void load(); }} />}
   </>;
 }
 
@@ -188,6 +192,7 @@ function ReviewView({ item, viewerRole, canDoctorReview, lockedForDoctor, canIns
       {viewerRole === "patient" && <div className="patient-review-notice"><ShieldCheck /><div><strong>{t("پرونده با موفقیت ارسال شده است")}</strong><p>{t("در این صفحه اطلاعات و پاسخ‌های ثبت‌شده در پرونده را مشاهده می‌کنید. نتایج پزشکی و هوش مصنوعی محرمانه‌اند.")}</p></div></div>}
       <section className="content-card"><header className="section-title"><span><FileImage /></span><div><h3>{t("تصاویر رادیولوژی")}</h3><p>{item.images?.filter((image) => image.purpose !== "lab").length.toLocaleString(locale())}  {t("تصویر پیوست شده")}</p></div></header><div className="xray-gallery">{item.images?.filter((image) => image.purpose !== "lab").map((image, index) => <figure key={image.id}><AuthenticatedImageLink source={image.image_url} label={t("تصویر رادیولوژی زانو")} /><ImageCaption image={image} index={index} /></figure>)}</div></section>
       {item.images?.some((image) => image.purpose === "lab") && <section className="content-card"><header className="section-title"><h3>{t("تصاویر آزمایش")}</h3></header><div className="xray-gallery">{item.images.filter((image) => image.purpose === "lab").map((image) => <AuthenticatedImageLink source={image.image_url} label="تصویر آزمایش" key={image.id} />)}</div></section>}
+      {viewerRole !== "patient" && ai && <AIAnalysisReport assessment={ai} />}
       <QuestionnaireSummary value={item.questionnaire} />
       {item.womac ? <WOMACSummary item={item.womac} /> : canDoctorReview && <DoctorWomacForm id={item.id} onSaved={onRefresh} />}
       {viewerRole !== "insurance" && item.insurance_decision && <InsuranceDecisionCard decision={item.insurance_decision} />}
@@ -199,7 +204,7 @@ function ReviewView({ item, viewerRole, canDoctorReview, lockedForDoctor, canIns
       {canInsuranceReview && <InsuranceDecisionForm initial={item.insurance_decision || undefined} id={item.id} onSaved={onInsuranceSaved} />}
       {viewerRole === "insurance" && !canInsuranceReview && item.insurance_decision && <InsuranceDecisionCard decision={item.insurance_decision} />}
     </div>
-    {viewerRole !== "patient" && <aside className="review-side"><PrevisitScoreCard scores={item.previsit_scores} /><AssessmentCard assessment={ai} source="ai" />{canDoctorReview && doctor && <AssessmentCard assessment={doctor} />}{!ai && <AIRequestPanel id={item.id} canRequest={viewerRole === "doctor"} isDraft={item.status === "draft"} onSaved={onRefresh} />}</aside>}
+    {viewerRole !== "patient" && <aside className="review-side"><PrevisitScoreCard scores={item.previsit_scores} />{canDoctorReview && doctor && <AssessmentCard assessment={doctor} />}{!ai && <AIRequestPanel id={item.id} canRequest={viewerRole === "doctor"} isDraft={item.status === "draft"} onSaved={onRefresh} />}</aside>}
   </div>;
 }
 
@@ -279,11 +284,14 @@ function AIRequestPanel({ id, canRequest, isDraft, onSaved }: { id: string; canR
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   async function request() {
     setBusy(true); setError("");
-    try { await casesApi.requestAiAssessment(id); onSaved(); }
+    try {
+      await casesApi.requestAiAssessment(id); await onSaved();
+      window.requestAnimationFrame(() => document.querySelector(".ai-report")?.scrollIntoView({ block: "start", behavior: "smooth" }));
+    }
     catch (e) { setError(apiErrorMessage(e, "دریافت پاسخ از سرویس هوش مصنوعی ممکن نشد. دوباره تلاش کنید.")); }
     finally { setBusy(false); }
   }
-  return <section className="assessment-card assessment-card--pending" aria-live="polite"><BrainCircuit /><h3>{t("ارزیابی هوش مصنوعی")}</h3><p>{t(isDraft ? "پس از تکمیل و ارسال پرونده می‌توانید تحلیل هوش مصنوعی را درخواست کنید." : "نتیجه هنوز از سرویس تحلیل دریافت نشده است.")}</p>{canRequest && <><button className="button" type="button" disabled={busy || isDraft} onClick={() => void request()}>{busy ? <LoaderCircle size={18} className="spin" /> : <BrainCircuit size={18} />}{t(busy ? "در حال دریافت نظر هوش مصنوعی..." : error ? "تلاش دوباره برای دریافت نظر هوش مصنوعی" : "دریافت نظر هوش مصنوعی")}</button><Link className="ai-settings-link" to="/settings">{t("تنظیم کلید OpenAI")}</Link></>}{error && <p role="alert" className="ai-error">{error}</p>}</section>;
+  return <section className="assessment-card assessment-card--pending" aria-live="polite"><BrainCircuit /><h3>{t("ارزیابی هوش مصنوعی")}</h3><p>{t(isDraft ? "پس از تکمیل و ارسال پرونده می‌توانید تحلیل هوش مصنوعی را درخواست کنید." : "نتیجه هنوز از سرویس تحلیل دریافت نشده است.")}</p>{canRequest && <button className="button" type="button" disabled={busy || isDraft} onClick={() => void request()}>{busy ? <LoaderCircle size={18} className="spin" /> : <BrainCircuit size={18} />}{t(busy ? "در حال دریافت نظر هوش مصنوعی..." : error ? "تلاش دوباره برای دریافت نظر هوش مصنوعی" : "دریافت نظر هوش مصنوعی")}</button>}{error && <p role="alert" className="ai-error">{error}</p>}</section>;
 }
 
 function DoctorWomacForm({ id, onSaved }: { id: string; onSaved: () => void }) {

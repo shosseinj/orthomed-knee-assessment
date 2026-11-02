@@ -1,12 +1,20 @@
 import base64
+from io import BytesIO
 import json
+import logging
 
 import requests
 from django.conf import settings
+from PIL import Image
 
 from .models import Assessment
 from .questionnaires import KNEE_SUPPLEMENTAL_ITEMS, WOMAC_ITEMS
 from .intake import previsit_scores
+
+logger = logging.getLogger(__name__)
+
+AI_AUTHENTICATION_ERROR = "اتصال سامانه به سرویس هوش مصنوعی تأیید نشد؛ با پشتیبانی تماس بگیرید."
+AI_RATE_LIMIT_ERROR = "سرویس تحلیل هوش مصنوعی موقتاً به سقف مصرف رسیده است؛ کمی بعد دوباره تلاش کنید."
 
 
 class AIProviderError(RuntimeError):
@@ -59,11 +67,25 @@ requires_further_examination را مشخص کنید و در rationale صریحا
     def _image_content(image):
         image.image.open("rb")
         try:
-            encoded = base64.b64encode(image.image.read()).decode("ascii")
+            content = image.image.read()
         finally:
             image.image.close()
         extension = image.image.name.rsplit(".", 1)[-1].lower()
         mime = {"jpg": "image/jpeg", "jpeg": "image/jpeg", "png": "image/png", "webp": "image/webp"}.get(extension, "image/jpeg")
+        # Prepare 16-bit PNGs as 8-bit copies for vision compatibility, scaling
+        # grayscale intensities instead of clipping. Preserve the uploaded file
+        # and its orientation; only the request bytes change.
+        if content.startswith(b"\x89PNG\r\n\x1a\n") and len(content) > 24 and content[24] == 16:
+            with Image.open(BytesIO(content)) as source:
+                if source.mode in ("I", "I;16", "I;16L", "I;16B"):
+                    prepared = source.convert("I").point(lambda value: value * (255 / 65535)).convert("L")
+                else:
+                    prepared = source.copy()
+                buffer = BytesIO()
+                prepared.save(buffer, format="PNG")
+                content = buffer.getvalue()
+            mime = "image/png"
+        encoded = base64.b64encode(content).decode("ascii")
         return {
             "type": "image_url",
             "image_url": {"url": f"data:{mime};base64,{encoded}", "detail": "high"},
@@ -137,7 +159,8 @@ requires_further_examination را مشخص کنید و در rationale صریحا
                 {"role": "user", "content": content},
             ],
             "response_format": {"type": "json_schema", "json_schema": self.response_schema},
-            "max_completion_tokens": 900,
+            # Reasoning tokens share this budget with the visible JSON answer.
+            "max_completion_tokens": settings.OPENAI_ASSESSMENT_MAX_COMPLETION_TOKENS,
         }
         try:
             response = requests.post(
@@ -147,21 +170,35 @@ requires_further_examination را مشخص کنید و در rationale صریحا
                 timeout=120,
             )
             if response.status_code == 401:
-                raise AIProviderError("کلید OpenAI پذیرفته نشد؛ آن را در تنظیمات بررسی یا جایگزین کنید.")
+                raise AIProviderError(AI_AUTHENTICATION_ERROR)
             if response.status_code == 429:
-                raise AIProviderError("سقف مصرف یا تعداد درخواست‌های OpenAI رسیده است؛ اعتبار و محدودیت حساب خود را بررسی کنید.")
+                raise AIProviderError(AI_RATE_LIMIT_ERROR)
             response.raise_for_status()
             body = response.json()
-            result = json.loads(body["choices"][0]["message"]["content"])
+            choices = body.get("choices") if isinstance(body, dict) else None
+            if not isinstance(choices, list) or not choices or not isinstance(choices[0], dict) or not isinstance(choices[0].get("message"), dict):
+                raise AIProviderError("AI assessment returned an invalid response envelope.")
+            choice = choices[0]
+            if choice.get("finish_reason") == "length":
+                logger.warning("AI assessment reached its completion token limit (budget=%s).", payload["max_completion_tokens"])
+                raise AIProviderError("AI assessment exceeded its completion token budget.")
+            if choice.get("finish_reason") not in (None, "stop") or choice["message"].get("refusal"):
+                raise AIProviderError("AI assessment did not return a completed answer.")
+            content = choice["message"]["content"]
+            if not isinstance(content, str) or not content.strip():
+                raise AIProviderError("AI assessment returned no visible answer.")
+            result = json.loads(content)
         except (requests.RequestException, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError) as exc:
             raise AIProviderError("OpenAI returned an invalid assessment response.") from exc
 
+        if not isinstance(result, dict) or set(result) != set(self.response_schema["schema"]["properties"]):
+            raise AIProviderError("OpenAI returned invalid assessment fields.")
         if result.get("verdict") not in Assessment.Verdict.values:
             raise AIProviderError("OpenAI returned an unsupported verdict.")
         kl_grade = result.get("kl_grade")
         requires_further_examination = result.get("requires_further_examination")
         confidence = result.get("confidence")
-        if not isinstance(confidence, (int, float)) or not 0 <= confidence <= 1:
+        if type(confidence) not in (int, float) or not 0 <= confidence <= 1:
             raise AIProviderError("OpenAI returned an invalid confidence.")
         if type(kl_grade) is not int or not 0 <= kl_grade <= 4:
             raise AIProviderError("OpenAI returned an invalid KL grade.")

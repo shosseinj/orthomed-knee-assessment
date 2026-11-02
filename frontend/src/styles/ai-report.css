@@ -1,0 +1,37 @@
+.ai-report.assessment-card { min-width: 0; padding: 26px; background: #fff; scroll-margin-top: 110px; font-family: "Vazirmatn", Tahoma, sans-serif; }
+.ai-report.assessment-card > header { flex-wrap: wrap; gap: 12px; }
+.ai-report.assessment-card > header > span { width: 48px; height: 48px; border-radius: 14px; }
+.ai-report.assessment-card > header h3 { margin: 3px 0 0; font-size: 20px; line-height: 1.6; font-weight: 750; color: var(--ink); }
+.ai-report.assessment-card > header small { font-size: 12px; color: var(--forest); }
+.ai-report > header time { margin-inline-start: auto; color: var(--text-500); font-size: 12px; }
+.ai-report__summary { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 18px; margin-block: 24px; padding: 20px; border: 1px solid var(--primary-200); border-radius: 13px; background: var(--primary-25); }
+.ai-report__summary--inconclusive, .ai-report__summary--surgery { background: #fff8eb; border-color: #e8d6ac; }
+.ai-report__summary > div { display: flex; flex-direction: column; gap: 7px; min-width: 0; }
+.ai-report__summary > div > span { color: var(--text-700); font-size: 12px; font-weight: 500; }
+.ai-report__summary > div > strong { color: var(--ink); font-size: 20px; font-weight: 750; line-height: 1.7; }
+.ai-report__summary .ai-report__grade { padding-inline-start: 20px; border-inline-start: 1px solid var(--line); }
+.ai-report__summary .ai-report__grade > strong { font-size: 18px; }
+.ai-report__sections { display: grid; gap: 16px; }
+.ai-report__section { min-width: 0; padding: 20px; border: 1px solid var(--line); border-radius: 13px; background: #fbfdfb; }
+.ai-report__section h4 { display: flex; align-items: baseline; gap: 10px; margin: 0 0 14px; font-size: 16px; font-weight: 700; line-height: 1.9; color: var(--ink); }
+.ai-report__section h4 > span { display: inline-grid; place-items: center; flex: none; width: 26px; height: 26px; border-radius: 8px; background: var(--primary-50); color: var(--forest); font-size: 12px; }
+.ai-report .ai-report__section p, .ai-report .ai-report__section li { margin: 0; color: #29463d; font-size: 15px; font-weight: 450; line-height: 2.05; overflow-wrap: anywhere; text-align: start; }
+.ai-report__section p + p, .ai-report__section p + ul, .ai-report__section p + ol, .ai-report__section ul + p, .ai-report__section ol + p { margin-block-start: 12px; }
+.ai-report__section ul, .ai-report__section ol { margin: 0; padding-inline-start: 23px; }
+.ai-report .ai-report__section li + li { margin-block-start: 12px; }
+.ai-report__section li::marker { color: var(--forest); font-weight: 650; }
+.ai-report__reference { color: var(--text-500); font-size: .8em; font-variant-numeric: tabular-nums; }
+.ai-report__section--brief { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; padding-block: 14px; }
+.ai-report__section--brief h4 { margin: 0; }
+.ai-report.assessment-card > footer { align-items: flex-start; margin-top: 22px; padding-top: 16px; color: var(--text-700); font-size: 12px; line-height: 1.9; }
+.ai-report > footer > svg { flex: none; margin-top: 3px; color: var(--forest); }
+@media (max-width: 650px) {
+  .ai-report.assessment-card { padding: 18px; }
+  .ai-report.assessment-card > header h3 { font-size: 18px; }
+  .ai-report > header time { flex-basis: 100%; margin-inline-start: 60px; }
+  .ai-report__summary { padding: 16px; margin-block: 20px; gap: 14px; }
+  .ai-report__summary > div > strong { font-size: 18px; }
+  .ai-report__summary .ai-report__grade { padding-inline-start: 0; border-inline-start: 0; }
+  .ai-report__section { padding: 16px; }
+  .ai-report__section h4 { font-size: 15px; }
+}

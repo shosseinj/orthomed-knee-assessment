@@ -5,8 +5,24 @@ import { apiErrorMessage, apiFieldErrors, authApi } from "../api/client";
 import { Toast } from "../components/Toast";
 import { t, useLocale } from "../i18n";
 import type { AISettingsStatus } from "../types";
+import { useAuth } from "../context/AuthContext";
 
 export function SettingsPage() {
+  const { user } = useAuth();
+  return user?.role === "doctor" ? <ManagedAISettings /> : <PersonalAISettings />;
+}
+
+function ManagedAISettings() {
+  useLocale();
+  return <>
+    <header className="page-heading"><div><span className="eyebrow">{t("حساب کاربری")}</span><h2>{t("تنظیمات")}</h2></div></header>
+    <section className="content-card">
+      <header className="section-title"><span><Settings /></span><div><h3>{t("سرویس تحلیل هوش مصنوعی")}</h3><p>{t("اتصال هوش مصنوعی توسط سامانه مدیریت می‌شود؛ برای دریافت تحلیل نیازی به واردکردن کلید نیست.")}</p></div></header>
+    </section>
+  </>;
+}
+
+function PersonalAISettings() {
   useLocale();
   const [status, setStatus] = useState<AISettingsStatus | null>(null);
   const [key, setKey] = useState("");

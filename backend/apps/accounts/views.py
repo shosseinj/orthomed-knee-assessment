@@ -27,12 +27,16 @@ class AISettingsView(APIView):
 
     @sensitive_variables()
     def put(self, request):
+        if request.user.active_role == User.Role.DOCTOR:
+            raise PermissionDenied("اتصال هوش مصنوعی برای پزشک توسط سامانه مدیریت می‌شود.")
         serializer = AISettingsSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         save_api_key(request.user, serializer.validated_data["openai_api_key"])
         return Response(settings_status(request.user))
 
     def delete(self, request):
+        if request.user.active_role == User.Role.DOCTOR:
+            raise PermissionDenied("اتصال هوش مصنوعی برای پزشک توسط سامانه مدیریت می‌شود.")
         AISettings.objects.filter(user=request.user).delete()
         return Response(settings_status(request.user))
 
@@ -51,15 +55,17 @@ class OTPRequestView(APIView):
         serializer.is_valid(raise_exception=True)
         phone_number = serializer.validated_data["phone_number"]
         try:
-            serializer.save()
+            challenge = serializer.save()
         except SMSDeliveryError:
             raise OTPDeliveryUnavailable() from None
         return Response({
             "detail": "کد تأیید آماده شد.",
             **otp_metadata(phone_number),
+            "sms_sent": challenge.sms_sent,
         }, status=status.HTTP_202_ACCEPTED)
 
 
+@method_decorator(sensitive_post_parameters("code"), name="dispatch")
 class OTPVerifyView(APIView):
     permission_classes = [AllowAny]
 

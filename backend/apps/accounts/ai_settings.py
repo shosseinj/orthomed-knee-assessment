@@ -5,7 +5,7 @@ from cryptography.fernet import Fernet, InvalidToken
 from django.conf import settings
 from django.utils.crypto import salted_hmac
 
-from .models import AISettings
+from .models import AISettings, User
 
 
 class AIKeyUnavailable(RuntimeError):
@@ -27,6 +27,8 @@ def save_api_key(user, api_key):
 
 
 def get_api_key(user):
+    if user.active_role == User.Role.DOCTOR:
+        return settings.OPENAI_API_KEY
     record = AISettings.objects.filter(user=user).first()
     if record:
         try:
@@ -37,7 +39,7 @@ def get_api_key(user):
 
 
 def settings_status(user):
-    record = AISettings.objects.filter(user=user).first()
+    record = None if user.active_role == User.Role.DOCTOR else AISettings.objects.filter(user=user).first()
     return {
         "has_api_key": record is not None,
         "key_last_four": record.key_last_four if record else "",

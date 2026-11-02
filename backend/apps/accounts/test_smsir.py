@@ -12,6 +12,7 @@ from .models import OTPChallenge, User
     DEBUG=True,
     OTP_BACKEND="smsir",
     ENABLE_MOCK_OTP=False,
+    OTP_MANUAL_CODE_HASH="",
     SMSIR_API_KEY="test-private-smsir-key",
     SMSIR_TEMPLATE_ID="123456",
     SMSIR_CODE_PARAMETER="PARAMETER1",

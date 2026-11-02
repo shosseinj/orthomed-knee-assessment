@@ -114,6 +114,8 @@ OTP_BACKEND = os.getenv("OTP_BACKEND", "console")
 ENABLE_MOCK_OTP = env_bool("ENABLE_MOCK_OTP", DEBUG)
 MOCK_OTP_PREFIX = os.getenv("MOCK_OTP_PREFIX", "0950")
 MOCK_OTP_CODE = os.getenv("MOCK_OTP_CODE", "11111")
+# Optional shared manual sign-in code; store only its Django password hash.
+OTP_MANUAL_CODE_HASH = os.getenv("OTP_MANUAL_CODE_HASH", "").strip()
 # Empty disables password-protected administrator registration.
 ADMIN_REGISTRATION_PASSWORD_HASH = os.getenv("ADMIN_REGISTRATION_PASSWORD_HASH", "").strip()
 SMSIR_API_KEY = os.getenv("SMSIR_API_KEY", "")
@@ -123,4 +125,5 @@ OPENAI_API_URL = os.getenv("OPENAI_API_URL", "https://api.openai.com/v1/chat/com
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 AI_SETTINGS_ENCRYPTION_SECRET = os.getenv("AI_SETTINGS_ENCRYPTION_SECRET", "")
 OPENAI_MODEL = os.getenv("OPENAI_MODEL", "gpt-5.5")
+OPENAI_ASSESSMENT_MAX_COMPLETION_TOKENS = int(os.getenv("OPENAI_ASSESSMENT_MAX_COMPLETION_TOKENS", "8192"))
 MAX_UPLOAD_SIZE = 12 * 1024 * 1024

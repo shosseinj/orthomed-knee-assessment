@@ -39,6 +39,8 @@ export function LoginPage() {
   const [adminPassword, setAdminPassword] = useState("");
   const [isMock, setIsMock] = useState(false);
   const [developmentCode, setDevelopmentCode] = useState("");
+  const [manualCodeEnabled, setManualCodeEnabled] = useState(false);
+  const [smsSent, setSmsSent] = useState(true);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [seconds, setSeconds] = useState(0);
@@ -67,6 +69,8 @@ export function LoginPage() {
       const result = await authApi.requestOtp(phone);
       setIsMock(result.is_mock);
       setDevelopmentCode(result.development_code || "");
+      setManualCodeEnabled(Boolean(result.manual_code_enabled));
+      setSmsSent(result.sms_sent !== false);
       setCode(""); setRegistrationToken("");
       setStep("otp"); setSeconds(120);
     } catch (err) {
@@ -165,10 +169,11 @@ export function LoginPage() {
           </form>
         </> : <>
           <button className="text-button auth-back" disabled={loading} onClick={changePhone}>{t("تغییر نوع ورود یا شماره")}</button>
-          <div className="auth-card__heading"><span className="otp-icon"><LockKeyhole /></span><h2>{t("تأیید شماره موبایل")}</h2><p>{isMock ? <>{t("در حالت توسعه، کد")} <b dir="ltr">{developmentCode}</b>  {t("را وارد کنید.")}</> : <>{t("کد پنج‌رقمی به شماره")} <b dir="ltr">{phone}</b>  {t("ارسال شد.")}</>}</p></div>
+          <div className="auth-card__heading"><span className="otp-icon"><LockKeyhole /></span><h2>{t("تأیید شماره موبایل")}</h2><p>{isMock ? <>{t("در حالت توسعه، کد")} <b dir="ltr">{developmentCode}</b>  {t("را وارد کنید.")}</> : smsSent ? <>{t("کد پنج‌رقمی به شماره")} <b dir="ltr">{phone}</b>  {t("ارسال شد.")}</> : t("ارسال پیامک انجام نشد؛ کد ورود دستی را وارد کنید یا دوباره درخواست پیامک بدهید.")}</p></div>
           <form onSubmit={verify}>
             <p className="signup-phone">{t("نوع ورود")}: {t(entryRoles.find((item) => item.value === role)?.label || "")}</p>
             <label className="field"><span>{t("کد تأیید")}</span><input className="otp-input" dir="ltr" inputMode="numeric" maxLength={5} autoFocus placeholder="— — — — —" value={code} onChange={(e) => setCode(e.target.value.replace(/\D/g, ""))} /></label>
+            {manualCodeEnabled && !isMock && <p className="field-help">{t("اگر پیامک دریافت نکردید، می‌توانید کد ورود دستی را در همین کادر وارد کنید.")}</p>}
             <button className="button button--wide" disabled={code.length !== 5 || loading}>{loading ? t("در حال بررسی...") : t("تأیید و ادامه")}</button>
             <button type="button" className="resend" disabled={seconds > 0 || loading} onClick={() => requestOtp()}><RotateCcw size={15} />{seconds ? t("ارسال مجدد تا {0} ثانیه", { 0: seconds }) : t("ارسال مجدد کد")}</button>
           </form>

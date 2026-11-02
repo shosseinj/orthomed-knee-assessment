@@ -19,7 +19,7 @@ from .catalogs import SUPPORTED_CATALOGS, search_catalog
 from .models import Assessment, DoctorPatient, InsuranceDecision, MedicalCase, QuestionnaireResponse, WOMACResponse, XRayImage
 from .permissions import CaseAccessPermission
 from .serializers import AssessmentSerializer, DoctorPatientSerializer, ImageConfirmationSerializer, InsuranceDecisionSerializer, MedicalCaseDetailSerializer, MedicalCaseListSerializer, QuestionnaireSerializer, WOMACSerializer, XRayImageSerializer
-from .services import AIProviderError, request_ai_assessment
+from .services import AI_AUTHENTICATION_ERROR, AI_RATE_LIMIT_ERROR, AIProviderError, request_ai_assessment
 from .image_classification import check_slot, classify_image, image_write, slot_key
 
 logger = logging.getLogger(__name__)
@@ -171,14 +171,14 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
         try:
             api_key = get_api_key(request.user)
         except AIKeyUnavailable:
-            return Response({"detail": "کلید ذخیره‌شده قابل خواندن نیست؛ آن را دوباره در تنظیمات وارد کنید."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return Response({"detail": "اتصال سرویس تحلیل در سامانه در دسترس نیست؛ با پشتیبانی تماس بگیرید."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         if not api_key:
-            return Response({"detail": "سرویس هوش مصنوعی پیکربندی نشده است؛ کلید OpenAI خود را در تنظیمات وارد کنید."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
+            return Response({"detail": "سرویس تحلیل هوش مصنوعی در سامانه فعال نیست؛ با پشتیبانی تماس بگیرید."}, status=status.HTTP_503_SERVICE_UNAVAILABLE)
         try:
             assessment = request_ai_assessment(case, api_key=api_key)
         except AIProviderError as exc:
             logger.warning("Doctor-requested AI assessment failed for case %s", case.id)
-            detail = str(exc) if str(exc) in ("کلید OpenAI پذیرفته نشد؛ آن را در تنظیمات بررسی یا جایگزین کنید.", "سقف مصرف یا تعداد درخواست‌های OpenAI رسیده است؛ اعتبار و محدودیت حساب خود را بررسی کنید.") else "دریافت پاسخ از سرویس هوش مصنوعی ممکن نشد. دوباره تلاش کنید."
+            detail = str(exc) if str(exc) in (AI_AUTHENTICATION_ERROR, AI_RATE_LIMIT_ERROR) else "دریافت پاسخ از سرویس هوش مصنوعی ممکن نشد. دوباره تلاش کنید."
             return Response({"detail": detail}, status=status.HTTP_502_BAD_GATEWAY)
         return Response(AssessmentSerializer(assessment, context={"request": request}).data)
 

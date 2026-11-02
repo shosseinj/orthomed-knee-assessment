@@ -32,3 +32,35 @@ test("SMS delivery failure keeps sign-in on the phone step and shows a delivery 
   await expect(page.getByLabel("Mobile number", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Verification code", { exact: true })).not.toBeVisible();
 });
+
+for (const smsSent of [true, false]) {
+  test(`manual code completes sign-in when SMS delivery ${smsSent ? "succeeds" : "fails"}`, async ({ page }) => {
+    await page.addInitScript(() => localStorage.setItem("orthomed_language", "en"));
+    const patient = { id: "patient", role: "patient", is_verified: true, can_manage_accounts: false,
+      first_name: "Alex", last_name: "Patient", full_name: "Alex Patient", phone_number: "09123456789" };
+    await page.route("**/api/v1/**", async (route) => {
+      if (route.request().url().endsWith("/otp/request/")) {
+        return route.fulfill({ status: 202, json: { is_mock: false, sms_sent: smsSent, manual_code_enabled: true } });
+      }
+      if (route.request().url().endsWith("/otp/verify/")) {
+        expect(route.request().postDataJSON()).toEqual({ phone_number: patient.phone_number, code: "17935", entry_role: "patient" });
+        return route.fulfill({ json: { registration_required: false, access: "manual-access", refresh: "manual-refresh", user: patient } });
+      }
+      if (route.request().url().endsWith("/auth/me/")) return route.fulfill({ json: patient });
+      return route.fulfill({ json: { count: 0, results: [] } });
+    });
+    await page.goto("/login");
+    await page.getByRole("radio", { name: "Patient", exact: true }).check();
+    await page.getByLabel("Mobile number", { exact: true }).fill(patient.phone_number);
+    await page.getByRole("button", { name: "Continue", exact: true }).click();
+    await expect(page.getByText("If you did not receive an SMS, you can enter the manual sign-in code in this field.", { exact: true })).toBeVisible();
+    await expect(page.locator(".auth-card")).not.toContainText("17935");
+    if (!smsSent) {
+      await expect(page.locator(".auth-card__heading p")).toHaveText("The SMS could not be sent. Enter the manual sign-in code or request another SMS.");
+    }
+    await page.getByLabel("Verification code", { exact: true }).fill("17935");
+    await page.getByRole("button", { name: "Verify and continue", exact: true }).click();
+    await expect(page).toHaveURL(/\/dashboard$/);
+    expect(await page.evaluate(() => localStorage.getItem("orthomed_access"))).toBe("manual-access");
+  });
+}

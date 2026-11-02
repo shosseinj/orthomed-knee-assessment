@@ -226,7 +226,7 @@
   .clinical-chips span { font-size: 11px; }
   .response-details p { font-size: 12px; line-height: 1.6; }
   .response-details p strong { flex: 0 0 auto; }
-  .xray-gallery { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .xray-gallery { grid-template-columns: minmax(0, 1fr); }
 
   .modal-backdrop { align-items: end; padding: 0; }
   .confirm-modal, .patient-picker, .birth-date-modal {

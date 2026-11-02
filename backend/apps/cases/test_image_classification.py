@@ -335,6 +335,28 @@ class OrganizedImageTests(TestCase):
             self.assertEqual(self.client.delete(f"/api/v1/images/{image.pk}/").status_code, 403)
 
     @patch("apps.cases.image_classification.requests.post")
+    def test_persian_evidence_and_detected_assignment_are_preserved_without_human_confirmation(self, post):
+        image = self.image(side="unknown", view="unknown")
+        reason = "نمای رخ زانو و نشانگر R دیده می‌شود؛ تصویر مربوط به زانوی راست است و کیفیت برای تشخیص نما کافی است."
+        post.return_value = Mock(json=lambda: {"choices": [{"message": {"content": json.dumps({"results": [detection(image.pk, reason=reason)]})}}]})
+        response = self.classify_endpoint(image)
+        self.assertEqual(response.status_code, 200, response.data)
+        self.assertEqual(response.data["detected_side"], "right")
+        self.assertEqual(response.data["detected_view"], "frontal")
+        self.assertEqual(response.data["classification_reason"], reason)
+        self.assertEqual(response.data["original_ai_result"]["reason"], reason)
+        self.assertEqual(response.data["declared_side"], "unknown")
+        self.assertIsNone(response.data["confirmed_at"])
+        self.assertIsNone(response.data["slot_key"])
+        payload = post.call_args.kwargs["json"]
+        self.assertIn("فارسی", payload["messages"][0]["content"])
+        properties = payload["response_format"]["json_schema"]["schema"]["properties"]["results"]["items"]["properties"]
+        self.assertIn("فارسی", properties["reason"]["description"])
+        self.assertEqual(properties["side"]["enum"], XRayImage.Side.values)
+        image.refresh_from_db()
+        self.assertEqual(image.classification_reason, reason)
+
+    @patch("apps.cases.image_classification.requests.post")
     def test_provider_receives_ids_but_no_declared_slots_filename_or_questionnaire(self, post):
         image = self.image()
         post.return_value = Mock(json=lambda: {"choices": [{"message": {"content": json.dumps({"results": [detection(image.pk)]})}}]})
