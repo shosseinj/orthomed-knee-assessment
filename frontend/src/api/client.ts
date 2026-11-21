@@ -161,3 +161,15 @@ export const casesApi = {
   saveDoctorAssessment: (id: string, data: Record<string, unknown>) => api(`/cases/${id}/doctor-assessment/`, { method: "PUT", body: JSON.stringify(data) }),
   saveInsuranceDecision: (id: string, data: Record<string, unknown>) => api(`/cases/${id}/insurance-decision/`, { method: "PUT", body: JSON.stringify(data) }),
 };
+
+export const appointmentsApi = {
+  list: (page = 1, active = false) => api<import("../types").Paginated<import("../types").Appointment>>(`/appointments/?page=${page}${active ? "&active=1" : ""}`),
+  create: (phone_number: string, scheduled_at: string) => api<import("../types").Appointment>("/appointments/", { method: "POST", body: JSON.stringify({ phone_number, scheduled_at }) }),
+  update: (id: string, changes: { scheduled_at?: string; status?: import("../types").AppointmentStatus }) => api<import("../types").Appointment>(`/appointments/${id}/`, { method: "PATCH", body: JSON.stringify(changes) }),
+  qr: () => api<import("../types").DoctorQR>("/doctor-qr/"),
+  setQrActive: (is_active: boolean) => api<import("../types").DoctorQR>("/doctor-qr/", { method: "PATCH", body: JSON.stringify({ is_active }) }),
+  rotateQr: () => api<import("../types").DoctorQR>("/doctor-qr/", { method: "POST" }),
+  identify: (token: string) => api<{ doctor: { full_name: string; medical_council_number: string } }>(`/reception/${token}/`, { authenticated: false }),
+  checkIn: (token: string) => api<import("../types").Appointment>(`/reception/${token}/`, { method: "POST", body: JSON.stringify({}) }),
+  history: (patientId: string, page = 1) => api<import("../types").Paginated<import("../types").MedicalCase> & { patient: import("../types").User }>(`/cases/patient-history/?patient_id=${encodeURIComponent(patientId)}&page=${page}`),
+};

@@ -276,3 +276,41 @@ class InsuranceDecision(models.Model):
     rationale = models.TextField()
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
+
+
+class DoctorQR(models.Model):
+    doctor = models.OneToOneField(settings.AUTH_USER_MODEL, on_delete=models.CASCADE, related_name="intake_qr")
+    token = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
+    is_active = models.BooleanField(default=True)
+    last_used_at = models.DateTimeField(null=True, blank=True)
+
+
+class Appointment(models.Model):
+    class Status(models.TextChoices):
+        SCHEDULED = "scheduled", "رزروشده"
+        CHECKED_IN = "checked_in", "پذیرش‌شده"
+        COMPLETED = "completed", "انجام‌شده"
+        CANCELLED = "cancelled", "لغوشده"
+
+    class Source(models.TextChoices):
+        DOCTOR = "doctor", "ثبت پزشک"
+        QR = "qr", "پذیرش با QR"
+
+    id = models.UUIDField(primary_key=True, default=uuid.uuid4, editable=False)
+    doctor = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="doctor_appointments")
+    patient = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.PROTECT, related_name="patient_appointments")
+    phone_number = models.CharField(max_length=11, db_index=True)
+    scheduled_at = models.DateTimeField(db_index=True)
+    source = models.CharField(max_length=10, choices=Source.choices, default=Source.DOCTOR)
+    status = models.CharField(max_length=16, choices=Status.choices, default=Status.SCHEDULED)
+    case = models.OneToOneField(MedicalCase, null=True, blank=True, on_delete=models.PROTECT, related_name="appointment")
+    checked_in_at = models.DateTimeField(null=True, blank=True)
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ("scheduled_at", "created_at")
+        constraints = [models.UniqueConstraint(
+            fields=("doctor", "scheduled_at"),
+            condition=models.Q(source="doctor") & ~models.Q(status="cancelled"),
+            name="unique_doctor_appointment_time",
+        )]

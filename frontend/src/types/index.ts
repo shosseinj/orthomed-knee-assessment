@@ -165,6 +165,9 @@ export interface MedicalCase {
   has_ai_assessment: boolean;
   has_insurance_decision: boolean;
   can_edit_intake: boolean;
+  can_review?: boolean;
+  can_request_ai?: boolean;
+  can_delete_draft?: boolean;
   submitted_at?: string;
   created_at: string;
   updated_at: string;
@@ -181,4 +184,25 @@ export interface Paginated<T> {
   next: string | null;
   previous: string | null;
   results: T[];
+}
+
+export type AppointmentStatus = "scheduled" | "checked_in" | "completed" | "cancelled";
+export interface Appointment {
+  id: string;
+  doctor: User;
+  patient: User | null;
+  phone_number: string;
+  scheduled_at: string;
+  source: "doctor" | "qr";
+  status: AppointmentStatus;
+  status_label: string;
+  case_id: string | null;
+  checked_in_at: string | null;
+}
+export interface DoctorQR {
+  token: string;
+  is_active: boolean;
+  url: string;
+  doctor: User;
+  image: string;
 }

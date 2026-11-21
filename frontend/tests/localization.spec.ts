@@ -10,7 +10,7 @@ async function signedIn(page: Page, role = "patient") {
   });
   await page.route("**/api/v1/**", async (route) => {
     const url = route.request().url();
-    const body = url.endsWith("/auth/me/") ? { ...user, role } : url.includes("/catalogs/") ? { results: [], count: 0, next_offset: null } : /\/cases\/[0-9a-f-]+\/$/.test(url) ? medicalCase : { results: [medicalCase], count: 1, next: null };
+    const body = url.includes("/appointments/") ? { results: [], count: 0, next: null } : url.endsWith("/auth/me/") ? { ...user, role } : url.includes("/catalogs/") ? { results: [], count: 0, next_offset: null } : /\/cases\/[0-9a-f-]+\/$/.test(url) ? medicalCase : { results: [medicalCase], count: 1, next: null };
     await route.fulfill({ json: body });
   });
 }

@@ -8,7 +8,7 @@ const id = "12345678-1234-1234-1234-123456789012";
 const image = { id: "image-1", image_url: "/api/v1/images/image-1/file/", purpose: "xray", view: "other" };
 async function setup(page: Page, { role = "patient", status = "draft", images = [] as object[], hasWomac = false } = {}) {
   await page.addInitScript(() => { localStorage.setItem("orthomed_access", "test-token"); localStorage.setItem("orthomed_refresh", "test-refresh"); localStorage.setItem("orthomed_language", "fa"); });
-  let record = { id, title: "ارزیابی جراحی زانو", patient, status, status_label: "پیش‌نویس", can_edit_intake: status === "draft", created_at: "2026-10-25T12:00:00Z", questionnaire: baseQuestionnaire, images, assessments: [] as object[], womac: hasWomac ? womac : undefined };
+  let record = { id, title: "ارزیابی جراحی زانو", patient, managing_doctor: { id: "doctor-1" }, can_review: role === "doctor" && status !== "draft", can_request_ai: role === "doctor" && status !== "draft", status, status_label: "پیش‌نویس", can_edit_intake: status === "draft", created_at: "2026-10-25T12:00:00Z", questionnaire: baseQuestionnaire, images, assessments: [] as object[], womac: hasWomac ? womac : undefined };
   await page.route("**/api/v1/**", async (route) => {
     const req = route.request(); const url = req.url();
     if (url.endsWith("/auth/me/")) return route.fulfill({ json: { ...patient, id: role === "doctor" ? "doctor-1" : patient.id, role } });

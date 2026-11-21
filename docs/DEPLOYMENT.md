@@ -34,14 +34,15 @@ Both must print only `82.115.20.247` before requesting the certificate.
 ## 2. Review production environment
 
 Set the production `.env` to the correct hostname, same-origin API, and
-`DJANGO_DEBUG=false`. The production Compose file disables mock OTP. The
+`DJANGO_DEBUG=false`. Set `FRONTEND_PUBLIC_URL=https://knee.nafasbooking.ir`
+so printed doctor QR codes open the public application rather than localhost. The production Compose file disables mock OTP. The
 development code `11111` is unavailable when debug is disabled; production
 uses randomly generated codes through the configured OTP provider.
 Confirm the non-secret values without printing credentials:
 
 ```bash
 cd /root/sharifclinic/AI/KneeWebsite
-grep -E '^(DJANGO_DEBUG|DJANGO_ALLOWED_HOSTS|CORS_ALLOWED_ORIGINS|CSRF_TRUSTED_ORIGINS|OTP_BACKEND|ENABLE_MOCK_OTP|VITE_API_URL)=' .env
+grep -E '^(DJANGO_DEBUG|DJANGO_ALLOWED_HOSTS|CORS_ALLOWED_ORIGINS|CSRF_TRUSTED_ORIGINS|OTP_BACKEND|ENABLE_MOCK_OTP|VITE_API_URL|FRONTEND_PUBLIC_URL)=' .env
 ```
 
 `OTP_BACKEND=smsir` also requires valid `SMSIR_API_KEY` and

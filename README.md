@@ -95,8 +95,8 @@ After sign-in, the account role is visible in the application header on desktop 
 
 | Active role | Workspace capabilities |
 | --- | --- |
-| Patient | Create and track their own cases, edit draft history and WOMAC answers, upload images, and manage personal identity details. Medical and AI assessment details remain hidden. |
-| Approved doctor | Manage assigned patients, create their cases, review submitted cases, request AI analysis, and record medical assessments. |
+| Patient | Complete and track cases started through appointments or QR check-in, edit draft history and WOMAC answers, upload images, and manage personal identity details. Medical and AI assessment details remain hidden. |
+| Approved doctor | Book appointments, manage their own cases, read submitted history for related patients, request AI analysis, and record medical assessments. |
 | Approved insurance reviewer | Review cases awaiting coverage decisions and completed cases, read clinical assessments, and record insurance decisions. Case creation and medical-assessment tools are unavailable. |
 | Administrator | Search, approve, reactivate, and revoke doctor/insurance role registrations independently. Clinical case routes are unavailable in the admin session. |
 
@@ -224,3 +224,21 @@ deploy/                  Existing Nginx deployment template
 The existing [deployment guide](docs/DEPLOYMENT.md), `docker-compose.production.yml`, and `deploy/nginx-knee.conf` describe a specific server installation. Adapt its hostname, network, storage, and environment settings for your infrastructure. The production Compose template disables mock OTP.
 
 Before clinical use, configure HTTPS, private medical file storage, backups, consent, retention policies, and account verification. AI output supports clinical review and requires clinical validation; it does not replace a qualified physician's diagnosis. Verify the WOMAC instrument's translation, validation, and licensing before clinical or insurance use.
+
+## Appointments and QR check-in
+
+Approved doctors have **Appointments** and **Patient check-in QR** pages. Book a patient by Iranian mobile number and a future date/time in Tehran (`Asia/Tehran`). Patients do not need an account yet: after phone verification and patient-role login or registration, pending appointments are attached to that identity and their case questionnaires become available. Scheduled visits can be rescheduled or cancelled; admitted visits can be marked complete. Cancelled/completed visits preserve answers and lock draft intake. Appointment completion is separate from medical assessment and insurance status.
+
+Each approved doctor receives a persistent random QR link. Download the PNG or print the named check-in poster for reception or the waiting room. Codes can be disabled, enabled, or replaced; replacement invalidates old printed copies. Set `FRONTEND_PUBLIC_URL` to the actual patient-facing origin, for example `https://orthomed.example`, before printing. The development default is `http://localhost:5173`; use a LAN-reachable hostname/IP when testing scans on another device. Backend dependencies include `qrcode[pil]`.
+
+Opening a QR link publicly reveals only the doctor's name and medical council number. Patients sign in/register and explicitly start check-in. The selected doctor survives the authentication flow. Check-in reuses an admitted/completed visit that day or admits the nearest scheduled appointment that day; otherwise it creates a walk-in visit. Repeated and concurrent scans return the same visit and retain previous answers. A second visit on the same day must be explicitly booked by the doctor.
+
+Doctors' main case list contains only their own cases. A non-cancelled appointment or previously submitted case under that doctor grants read-only access to the patient's submitted history, including other doctors' images and assessments. Other doctors' drafts remain private. Adding a phone number to a patient list alone does not grant history access. Direct case creation is closed: use appointments or QR check-in. Existing unassigned cases remain private to their patient until a legitimate treating relationship grants access to submitted history. Existing assigned records and answers are preserved.
+
+Apply database migrations after upgrading (`python backend/manage.py migrate`). This release provides appointment/questionnaire availability inside the app; SMS appointment delivery and scheduled reminders are not included.
+
+### پذیرش و نوبت‌ها
+
+پزشک تأییدشده از بخش «نوبت‌ها» با شماره موبایل و تاریخ و ساعت تهران نوبت ثبت می‌کند. بیمار پس از ورود یا ثبت‌نام با همان شماره، نوبت و پرسشنامه را در پنل خود می‌بیند. در بخش «QR پذیرش بیمار» می‌توان کد اختصاصی پزشک را دانلود، چاپ، غیرفعال یا جایگزین کرد. کد را همراه نام پزشک در پذیرش یا سالن انتظار قرار دهید. مقدار `FRONTEND_PUBLIC_URL` باید آدرس واقعی و قابل دسترس برای بیماران باشد.
+
+بیمار QR را اسکن می‌کند، وارد حساب بیمار می‌شود و پذیرش را تأیید می‌کند. اسکن تکراری در همان روز پروندهٔ تازه نمی‌سازد. پزشک پرونده‌های خودش را مدیریت می‌کند و سوابق ارسال‌شدهٔ بیمار نزد پزشکان دیگر را فقط می‌خواند؛ پیش‌نویس‌های دیگران نمایش داده نمی‌شوند. ساخت پروندهٔ بدون نوبت یا QR بسته شده است. پیامک نوبت و یادآوری خودکار در این نسخه ارائه نمی‌شود.

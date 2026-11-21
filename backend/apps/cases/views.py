@@ -3,9 +3,8 @@ import mimetypes
 
 from django.http import FileResponse
 from django.db import transaction
-from django.db.models import Q
 from django.utils import timezone
-from rest_framework import status, viewsets
+from rest_framework import serializers, status, viewsets
 from rest_framework.decorators import action, api_view, permission_classes
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.parsers import FormParser, MultiPartParser
@@ -14,7 +13,8 @@ from rest_framework.response import Response
 
 from apps.accounts.models import User
 from apps.accounts.ai_settings import AIKeyUnavailable, get_api_key
-from apps.accounts.serializers import normalize_phone
+from apps.accounts.serializers import CasePatientSerializer, normalize_phone
+from .access import related_patient_ids, visible_cases
 from .catalogs import SUPPORTED_CATALOGS, search_catalog
 from .models import Assessment, DoctorPatient, InsuranceDecision, MedicalCase, QuestionnaireResponse, WOMACResponse, XRayImage
 from .permissions import CaseAccessPermission
@@ -45,30 +45,39 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
     http_method_names = ["get", "post", "put", "patch", "delete", "head", "options"]
 
     def get_queryset(self):
-        queryset = MedicalCase.objects.select_related("patient", "managing_doctor").prefetch_related("images", "assessments__author")
+        queryset = MedicalCase.objects.select_related("patient", "managing_doctor", "appointment").prefetch_related("images", "assessments__author")
         if self.request.user.active_role == User.Role.PATIENT:
             return queryset.filter(patient=self.request.user)
         if self.request.user.active_role == User.Role.INSURANCE:
             return queryset.filter(status__in=(MedicalCase.Status.UNDER_REVIEW, MedicalCase.Status.COMPLETED))
-        return queryset.filter(Q(managing_doctor=self.request.user) | ~Q(status=MedicalCase.Status.DRAFT)).distinct()
+        if self.action == "list":
+            return queryset.filter(managing_doctor=self.request.user)
+        return visible_cases(self.request.user, queryset)
 
     def get_serializer_class(self):
         return MedicalCaseDetailSerializer if self.action == "retrieve" else MedicalCaseListSerializer
 
     def perform_create(self, serializer):
-        if self.request.user.active_role == User.Role.PATIENT:
-            serializer.save(patient=self.request.user)
-            return
-        patient_id = self.request.data.get("patient_id")
-        assignment = DoctorPatient.objects.select_related("patient").filter(
-            doctor=self.request.user,
-            patient_id=patient_id,
-        ).first()
-        if not assignment:
-            raise ValidationError({"patient_id": "ابتدا بیمار را به فهرست بیماران خود اضافه کنید."})
-        serializer.save(patient=assignment.patient, managing_doctor=self.request.user)
+        raise PermissionDenied("پرونده باید از مسیر نوبت یا پذیرش با QR ایجاد شود.")
+
+    @action(detail=False, methods=["get"], url_path="patient-history")
+    def patient_history(self, request):
+        if request.user.active_role != User.Role.DOCTOR:
+            raise PermissionDenied()
+        patient_id = serializers.UUIDField().run_validation(request.query_params.get("patient_id"))
+        if patient_id not in related_patient_ids(request.user):
+            raise PermissionDenied("به سوابق این بیمار دسترسی ندارید.")
+        patient = User.objects.get(pk=patient_id)
+        queryset = self.get_queryset().filter(patient=patient).exclude(status=MedicalCase.Status.DRAFT)
+        response = self.get_paginated_response(MedicalCaseListSerializer(
+            self.paginate_queryset(queryset), many=True, context={"request": request},
+        ).data)
+        response.data["patient"] = CasePatientSerializer(patient).data
+        return response
 
     def perform_destroy(self, instance):
+        if hasattr(instance, "appointment"):
+            raise ValidationError("پروندهٔ مرتبط با نوبت حذف نمی‌شود؛ نوبت را لغو کنید.")
         is_patient_owner = self.request.user.active_role == User.Role.PATIENT and instance.patient_id == self.request.user.id
         is_managing_doctor = self.request.user.active_role == User.Role.DOCTOR and instance.managing_doctor_id == self.request.user.id
         if not (is_patient_owner or is_managing_doctor):
@@ -92,7 +101,7 @@ class MedicalCaseViewSet(viewsets.ModelViewSet):
             assignment, created = DoctorPatient.objects.get_or_create(doctor=request.user, patient=patient)
             response_status = status.HTTP_201_CREATED if created else status.HTTP_200_OK
             return Response(DoctorPatientSerializer(assignment).data, status=response_status)
-        assignments = DoctorPatient.objects.filter(doctor=request.user).select_related("patient")
+        assignments = DoctorPatient.objects.filter(doctor=request.user, patient_id__in=related_patient_ids(request.user)).select_related("patient")
         return Response(DoctorPatientSerializer(assignments, many=True).data)
 
     @action(detail=True, methods=["put"], url_path="questionnaire")

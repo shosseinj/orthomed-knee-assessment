@@ -1,6 +1,6 @@
 import { LanguageSwitcher } from "../components/LanguageSwitcher";
 import { t, useLocale } from "../i18n";
-import { Bell, ClipboardList, LogOut, Menu, Plus, Settings, ShieldCheck, Stethoscope, UserRound, X } from "lucide-react";
+import { Bell, ClipboardList, LogOut, Menu, CalendarDays, QrCode, Settings, ShieldCheck, Stethoscope, UserRound, X } from "lucide-react";
 import { useEffect, useState } from "react";
 import { NavLink, Outlet, useLocation, useNavigate } from "react-router-dom";
 import { authApi } from "../api/client";
@@ -41,7 +41,8 @@ export function AppShell() {
       <nav className="sidebar__nav" onClick={() => setOpen(false)}>
         {user.can_manage_accounts && <NavLink to="/management"><ShieldCheck size={20} /> {t("مدیر سامانه")}</NavLink>}
         {!isAdmin && <NavLink to="/dashboard" end><ClipboardList size={20} />  {t(user.role === "doctor" ? "پرونده‌های بیماران" : user.role === "insurance" ? "بررسی پوشش بیمه" : "پرونده‌های من")}</NavLink>}
-        {!isAdmin && user.role === "patient" && <NavLink to="/cases/new"><Plus size={20} />  {t("پرونده جدید")}</NavLink>}
+        {!isAdmin && (user.role === "patient" || user.role === "doctor") && <NavLink to="/appointments"><CalendarDays size={20} /> {t("نوبت‌ها")}</NavLink>}
+        {user.role === "doctor" && <NavLink to="/doctor-qr"><QrCode size={20} /> {t("QR پذیرش بیمار")}</NavLink>}
         <NavLink to="/settings"><Settings size={20} /> {t("تنظیمات")}</NavLink>
         {user.role === "doctor" && <span className="nav-caption"><Stethoscope size={19} />  {t("پنل پزشک")}</span>}
         {user.role === "insurance" && <span className="nav-caption"><ShieldCheck size={19} />  {t("پنل بیمه")}</span>}
@@ -68,7 +69,7 @@ export function AppShell() {
     <nav className="mobile-nav" aria-label={t("ناوبری اصلی")}>
       {user.can_manage_accounts && <NavLink to="/management"><ShieldCheck size={21} /><span>{t("مدیریت")}</span></NavLink>}
       {!isAdmin && <NavLink to="/dashboard" className={({ isActive }) => isActive || location.pathname.startsWith("/cases/") && location.pathname !== "/cases/new" ? "active" : ""}><ClipboardList size={21} /><span>{t("پرونده‌ها")}</span></NavLink>}
-      {!isAdmin && user.role === "patient" && <NavLink to="/cases/new" className="mobile-nav__create"><Plus size={24} /><span>{t("پرونده جدید")}</span></NavLink>}
+      {!isAdmin && (user.role === "patient" || user.role === "doctor") && <NavLink to="/appointments"><CalendarDays size={21} /><span>{t("نوبت‌ها")}</span></NavLink>}
       <NavLink to="/settings"><Settings size={21} /><span>{t("تنظیمات")}</span></NavLink>
       {user.role !== "patient" && <button type="button" onClick={() => setOpen(true)}><Menu size={21} /><span>{t("منو")}</span></button>}
     </nav>

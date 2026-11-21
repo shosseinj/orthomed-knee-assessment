@@ -37,7 +37,7 @@ class PrevisitTests(TestCase):
         self.other = User.objects.create_user("09121230002", role="patient", is_verified=True)
         self.doctor = User.objects.create_user("09121230003", role="doctor", is_verified=True)
         self.insurance = User.objects.create_user("09121230004", role="insurance", is_verified=True)
-        self.case = MedicalCase.objects.create(patient=self.patient)
+        self.case = MedicalCase.objects.create(patient=self.patient, managing_doctor=self.doctor)
         self.client = APIClient()
         self.client.force_authenticate(self.patient)
         self.url = f"/api/v1/cases/{self.case.pk}/"

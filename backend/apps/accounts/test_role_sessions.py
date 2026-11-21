@@ -79,7 +79,7 @@ class RoleSessionTests(TestCase):
                 registered = APIClient().post("/api/v1/auth/register/", {**self.identity, "first_name": "Alex", "registration_token": verified.data["registration_token"], "role": "patient", "national_code": "0084575948"}, format="json")
                 self.assertEqual(registered.status_code, 201, registered.data)
                 patient_client = self.client_for(registered)
-                self.assertEqual(patient_client.post("/api/v1/cases/", {}, format="json").status_code, 201)
+                self.assertEqual(patient_client.post("/api/v1/cases/", {}, format="json").status_code, 403)
                 user.refresh_from_db()
                 self.assertEqual(user.role, primary)
                 self.assertFalse(user.is_verified)
@@ -169,7 +169,7 @@ class RoleSessionTests(TestCase):
         patient = self.client_for(self.verify("patient"))
         doctor = self.client_for(self.verify("doctor"))
         insurer = self.client_for(self.verify("insurance"))
-        case = MedicalCase.objects.create(patient=self.user, status="under_review")
+        case = MedicalCase.objects.create(patient=self.user, managing_doctor=self.user, status="under_review")
         Assessment.objects.create(case=case, source="doctor", author=self.user,
                                   verdict="inconclusive", rationale="Private assessment")
         url = f"/api/v1/cases/{case.pk}/"

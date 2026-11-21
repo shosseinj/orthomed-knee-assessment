@@ -2,7 +2,7 @@ import { LanguageSwitcher } from "../components/LanguageSwitcher";
 import { t, useLocale } from "../i18n";
 import { ArrowLeft, Check, LockKeyhole, Phone, RotateCcw, ShieldCheck, Stethoscope, Building2, UserRound } from "lucide-react";
 import { FormEvent, useEffect, useState } from "react";
-import { Navigate, useNavigate } from "react-router-dom";
+import { Navigate, useNavigate, useSearchParams } from "react-router-dom";
 import { ApiError, apiErrorMessage, authApi } from "../api/client";
 import { BirthDatePicker } from "../components/BirthDatePicker";
 import { Logo } from "../components/Logo";
@@ -24,6 +24,10 @@ export function LoginPage() {
   useLocale();
   const { user, login } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const requestedNext = searchParams.get("next") || "";
+  const next = /^\/check-in\/[0-9a-f-]{36}$/i.test(requestedNext) ? requestedNext : "";
+  const destination = (account: User) => next && account.role === "patient" ? next : account.can_manage_accounts ? "/management" : "/dashboard";
   const [step, setStep] = useState<Step>("phone");
   const [phone, setPhone] = useState("");
   const [code, setCode] = useState("");
@@ -31,7 +35,7 @@ export function LoginPage() {
   const [lastName, setLastName] = useState("");
   const [nationalCode, setNationalCode] = useState("");
   const [birthDate, setBirthDate] = useState("");
-  const [role, setRole] = useState<EntryRole | null>(null);
+  const [role, setRole] = useState<EntryRole | null>(next ? "patient" : null);
   const [medicalCouncilNumber, setMedicalCouncilNumber] = useState("");
   const [organizationName, setOrganizationName] = useState("");
   const [registrationToken, setRegistrationToken] = useState("");
@@ -51,7 +55,7 @@ export function LoginPage() {
     return () => window.clearInterval(timer);
   }, [seconds]);
 
-  if (user) return <Navigate to={user.can_manage_accounts ? "/management" : "/dashboard"} replace />;
+  if (user) return <Navigate to={destination(user)} replace />;
 
   function changePhone() {
     setStep("phone"); setRegistrationToken(""); setCode(""); setError(""); setSeconds(0);
@@ -95,7 +99,7 @@ export function LoginPage() {
         return;
       }
       login(result.access, result.refresh, result.user);
-      navigate(result.user.can_manage_accounts ? "/management" : "/dashboard");
+      navigate(destination(result.user));
     } catch (err) {
       if (err instanceof ApiError && (err.body as { errors?: Record<string, unknown> })?.errors?.entry_role) {
         setStep("phone"); setCode(""); setRegistrationToken(""); setSeconds(0);
@@ -119,7 +123,7 @@ export function LoginPage() {
       setRegistrationToken("");
       setAdminPassword("");
       login(result.access, result.refresh, result.user);
-      navigate(result.user.can_manage_accounts ? "/management" : "/dashboard");
+      navigate(destination(result.user));
     } catch (err) {
       setAdminPassword("");
       if (err instanceof ApiError && (err.body as { errors?: Record<string, unknown> })?.errors?.registration_token) {
@@ -147,7 +151,7 @@ export function LoginPage() {
         {step === "phone" ? <>
           <div className="auth-card__heading"><h2>{t("ورود یا ثبت‌نام")}</h2><p>{t("نوع ورود را انتخاب کنید، سپس شماره موبایل خود را وارد کنید.")}</p></div>
           <form onSubmit={requestOtp}>
-            <fieldset className="entry-roles" disabled={loading}><legend>{t("نوع ورود")}</legend><div className="entry-roles__grid">{entryRoles.map(({ value, label, icon: Icon }) => <label key={value} className={`entry-role ${role === value ? "entry-role--selected" : ""}`}><input type="radio" name="entry_role" value={value} checked={role === value} onChange={() => { setRole(value); setError(""); }} required /><Icon size={23} aria-hidden="true" /><span>{t(label)}</span></label>)}</div></fieldset>
+            <fieldset className="entry-roles" disabled={loading}><legend>{t("نوع ورود")}</legend><div className="entry-roles__grid">{entryRoles.filter((entry) => !next || entry.value === "patient").map(({ value, label, icon: Icon }) => <label key={value} className={`entry-role ${role === value ? "entry-role--selected" : ""}`}><input type="radio" name="entry_role" value={value} checked={role === value} onChange={() => { setRole(value); setError(""); }} required /><Icon size={23} aria-hidden="true" /><span>{t(label)}</span></label>)}</div></fieldset>
             {role === "admin" && <p className="field-help">{t("برای ساخت حساب ادمین، رمز ثبت‌نام مدیر لازم است.")}</p>}
             <label className="field"><span>{t("شماره موبایل")}</span><div className="input-wrap"><Phone size={20} /><input dir="ltr" inputMode="numeric" autoComplete="tel" disabled={!role || loading} placeholder="0912 123 4567" value={phone} onChange={(e) => setPhone(e.target.value)} /></div></label>
             <button className="button button--wide" disabled={!role || phone.length < 11 || loading}>{loading ? t("در حال ارسال...") : <>{t("ادامه")} <ArrowLeft size={19} /></>}</button>

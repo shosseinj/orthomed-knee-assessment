@@ -1,4 +1,6 @@
 import json
+from datetime import timedelta
+from django.utils import timezone
 from unittest.mock import Mock, patch
 
 from django.core.files.uploadedfile import SimpleUploadedFile
@@ -19,7 +21,7 @@ class CasePermissionTests(TestCase):
         self.other_patient = User.objects.create_user("09120000002", role=User.Role.PATIENT, is_verified=True)
         self.doctor = User.objects.create_user("09120000003", role=User.Role.DOCTOR, is_verified=True)
         self.insurance = User.objects.create_user("09120000004", role=User.Role.INSURANCE, is_verified=True)
-        self.case = MedicalCase.objects.create(patient=self.patient)
+        self.case = MedicalCase.objects.create(patient=self.patient, managing_doctor=self.doctor)
         self.client = APIClient()
 
     def test_patient_only_lists_own_cases(self):
@@ -111,7 +113,7 @@ class CasePermissionTests(TestCase):
         self.case.refresh_from_db()
         self.assertEqual(self.case.status, MedicalCase.Status.UNDER_REVIEW)
 
-    def test_doctor_can_add_registered_patient_and_start_their_case(self):
+    def test_doctor_can_book_registered_patient_and_complete_their_intake(self):
         self.client.force_authenticate(self.doctor)
         added = self.client.post("/api/v1/cases/my-patients/", {
             "phone_number": self.other_patient.phone_number,
@@ -120,14 +122,15 @@ class CasePermissionTests(TestCase):
         self.assertEqual(added.data["patient"]["id"], str(self.other_patient.id))
         self.assertTrue(DoctorPatient.objects.filter(doctor=self.doctor, patient=self.other_patient).exists())
 
-        created = self.client.post("/api/v1/cases/", {
-            "patient_id": str(self.other_patient.id),
+        created = self.client.post("/api/v1/appointments/", {
+            "phone_number": self.other_patient.phone_number,
+            "scheduled_at": (timezone.now() + timedelta(days=1)).isoformat(),
         }, format="json")
         self.assertEqual(created.status_code, 201, created.data)
-        doctor_case = MedicalCase.objects.get(pk=created.data["id"])
+        doctor_case = MedicalCase.objects.get(pk=created.data["case_id"])
         self.assertEqual(doctor_case.patient, self.other_patient)
         self.assertEqual(doctor_case.managing_doctor, self.doctor)
-        self.assertTrue(created.data["can_edit_intake"])
+        self.assertTrue(self.client.get(f"/api/v1/cases/{doctor_case.pk}/").data["can_edit_intake"])
 
         questionnaire = self.client.put(f"/api/v1/cases/{doctor_case.id}/questionnaire/", {
             "age_years": 65,
@@ -156,12 +159,12 @@ class CasePermissionTests(TestCase):
         self.assertEqual(questionnaire.data["underlying_conditions"], ["فشارخون بالا", "دیابت نوع ۲", "بیماری ثبت‌نشده در فهرست"])
         self.assertEqual(questionnaire.data["medications"], ["ایبوپروفن — IBUPROFEN"])
 
-    def test_doctor_cannot_start_case_before_adding_patient(self):
+    def test_doctor_cannot_create_case_outside_appointment_flow(self):
         self.client.force_authenticate(self.doctor)
         response = self.client.post("/api/v1/cases/", {
             "patient_id": str(self.other_patient.id),
         }, format="json")
-        self.assertEqual(response.status_code, 400)
+        self.assertEqual(response.status_code, 403)
 
     def test_other_doctor_cannot_open_managed_draft(self):
         doctor_case = MedicalCase.objects.create(
@@ -188,7 +191,7 @@ class CasePermissionTests(TestCase):
         response = self.client.put(f"/api/v1/cases/{self.case.id}/doctor-assessment/", {
             "verdict": "surgery", "rationale": "پزشک دوم نباید بتواند این نتیجه را جایگزین کند."
         }, format="json")
-        self.assertEqual(response.status_code, 403)
+        self.assertEqual(response.status_code, 404)
         assessment = Assessment.objects.get(case=self.case, source=Assessment.Source.DOCTOR)
         self.assertEqual(assessment.author, self.doctor)
         self.assertEqual(assessment.verdict, Assessment.Verdict.NO_SURGERY)

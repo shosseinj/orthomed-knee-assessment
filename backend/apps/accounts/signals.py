@@ -27,8 +27,19 @@ def sync_primary_registration(sender, instance, raw=False, **kwargs):
         RoleRegistration.objects.create(id=registration_id, user=instance, role=instance.role,
                                         date_joined=instance.date_joined, **values)
 
+    if instance.role == User.Role.DOCTOR and instance.is_verified:
+        from apps.cases.models import DoctorQR
+        DoctorQR.objects.get_or_create(doctor=instance)
+
 
 @receiver(user_logged_in)
 def audit_admin_login(sender, request, user, **kwargs):
     if request and request.path.startswith("/admin/") and user.is_staff:
         record_access(user, AccessEventKind.ADMIN_LOGIN, request)
+
+
+@receiver(post_save, sender=RoleRegistration)
+def create_doctor_qr(sender, instance, raw=False, **kwargs):
+    if not raw and instance.role == User.Role.DOCTOR and instance.is_verified:
+        from apps.cases.models import DoctorQR
+        DoctorQR.objects.get_or_create(doctor_id=instance.user_id)

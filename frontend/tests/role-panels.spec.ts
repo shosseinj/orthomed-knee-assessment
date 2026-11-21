@@ -33,11 +33,12 @@ for (const role of ["patient", "doctor", "insurance", "admin"]) {
       await expect(sidebar.locator('a[href="/management"]')).toHaveCount(0);
       await expect(sidebar.locator('a[href="/dashboard"]')).toHaveText(role === "patient" ? "My cases" : role === "doctor" ? "Patient cases" : "Coverage review");
       await expect(page.locator(".page-heading .eyebrow")).toHaveText(role === "patient" ? "Patient workspace" : role === "doctor" ? "Doctor workspace" : "Insurance workspace");
-      await expect(sidebar.locator('a[href="/cases/new"]')).toHaveCount(role === "patient" ? 1 : 0);
-      await expect(page.getByRole("button", { name: "Add patient and case", exact: true })).toHaveCount(role === "doctor" ? 1 : 0);
+      await expect(sidebar.locator('a[href="/cases/new"]')).toHaveCount(0);
+      await expect(page.locator(".page-heading").getByRole("link", { name: "Book appointment", exact: true })).toHaveCount(role === "doctor" ? 1 : 0);
+      await expect(sidebar.locator('a[href="/appointments"]')).toHaveCount(role === "patient" || role === "doctor" ? 1 : 0);
       if (role !== "patient") {
         await page.goto("/cases/new");
-        await expect(page).toHaveURL("/dashboard");
+        await expect(page).toHaveURL(role === "doctor" ? "/appointments" : "/dashboard");
         expect(caseCreates).toBe(0);
       }
     }

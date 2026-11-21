@@ -61,3 +61,10 @@ export function isoFromPersianDate(year: number, month: number, day: number): st
   }
   return null;
 }
+
+
+export function formatAppointmentTime(value: string): string {
+  return new Intl.DateTimeFormat(locale() === "fa-IR" ? "fa-IR-u-ca-persian" : "en-US-u-ca-gregory", {
+    timeZone: "Asia/Tehran", year: "numeric", month: "long", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23",
+  }).format(new Date(value));
+}

@@ -104,7 +104,7 @@ class OTPRequestSerializer(serializers.Serializer):
 
 
 class PanelAccessSerializer(serializers.Serializer):
-    path = serializers.RegexField(r"^/(?:dashboard|profile|settings|management|cases/(?:new|[0-9a-fA-F-]{36}))/?$", max_length=80)
+    path = serializers.RegexField(r"^/(?:dashboard|appointments|doctor-qr|patients/[0-9a-fA-F-]{36}/history|profile|settings|management|cases/(?:new|[0-9a-fA-F-]{36}))/?$", max_length=80)
     client_timezone = serializers.CharField(max_length=64, required=False, allow_blank=True)
 
 
@@ -200,6 +200,9 @@ def login_result(user, role=None):
     role = role or ("admin" if has_management_access(user) else user.role)
     user._session_role = role
     user.__dict__.pop("_active_registration", None)
+    if role == User.Role.PATIENT:
+        from apps.cases.appointments import bind_pending_appointments
+        bind_pending_appointments(user)
     refresh = RefreshToken.for_user(user)
     refresh["active_role"] = role
     return {"access": str(refresh.access_token), "refresh": str(refresh), "user": AccountSelfSerializer(user).data}

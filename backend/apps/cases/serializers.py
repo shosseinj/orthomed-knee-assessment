@@ -3,6 +3,7 @@ from rest_framework import serializers
 
 from apps.accounts.models import User
 from apps.accounts.serializers import CasePatientSerializer, DoctorIdentitySerializer
+from .access import intake_is_open
 from .models import Assessment, DoctorPatient, InsuranceDecision, MedicalCase, QuestionnaireResponse, WOMACResponse, XRayImage
 from .questionnaires import KNEE_SUPPLEMENTAL_ITEM_IDS, KNEE_SUPPLEMENTAL_ITEMS, WOMAC_ITEM_IDS, WOMAC_ITEMS
 from .intake import COMMON_CONDITIONS, RED_FLAGS, PAINKILLERS, HIGH_RISK, COMPARTMENTS, previsit_scores
@@ -266,10 +267,13 @@ class MedicalCaseListSerializer(serializers.ModelSerializer):
     has_ai_assessment = serializers.SerializerMethodField()
     has_insurance_decision = serializers.SerializerMethodField()
     can_edit_intake = serializers.SerializerMethodField()
+    can_review = serializers.SerializerMethodField()
+    can_delete_draft = serializers.SerializerMethodField()
+    can_request_ai = serializers.SerializerMethodField()
 
     class Meta:
         model = MedicalCase
-        fields = ("id", "title", "patient", "managing_doctor", "status", "status_label", "image_count", "has_doctor_assessment", "has_ai_assessment", "has_insurance_decision", "can_edit_intake", "submitted_at", "created_at", "updated_at")
+        fields = ("id", "title", "patient", "managing_doctor", "status", "status_label", "image_count", "has_doctor_assessment", "has_ai_assessment", "has_insurance_decision", "can_edit_intake", "can_review", "can_delete_draft", "can_request_ai", "submitted_at", "created_at", "updated_at")
         read_only_fields = ("id", "patient", "managing_doctor", "status", "submitted_at", "created_at", "updated_at")
 
     def get_has_doctor_assessment(self, obj):
@@ -283,9 +287,21 @@ class MedicalCaseListSerializer(serializers.ModelSerializer):
 
     def get_can_edit_intake(self, obj):
         request = self.context.get("request")
-        if not request or obj.status != MedicalCase.Status.DRAFT:
+        if not request or not intake_is_open(obj):
             return False
         return (request.user.active_role == User.Role.PATIENT and obj.patient_id == request.user.id) or (request.user.active_role == User.Role.DOCTOR and obj.managing_doctor_id == request.user.id)
+
+    def get_can_review(self, obj):
+        request = self.context.get("request")
+        return bool(request and request.user.active_role == User.Role.DOCTOR
+                    and request.user.active_is_verified and obj.managing_doctor_id == request.user.id
+                    and obj.status in (MedicalCase.Status.SUBMITTED, MedicalCase.Status.UNDER_REVIEW))
+
+    def get_can_request_ai(self, obj):
+        return self.get_can_review(obj)
+
+    def get_can_delete_draft(self, obj):
+        return self.get_can_edit_intake(obj) and not hasattr(obj, "appointment")
 
 
 class MedicalCaseDetailSerializer(MedicalCaseListSerializer):
